@@ -1,31 +1,52 @@
-diff --git a/node_modules/react-pdf/dist/esm/Page/TextLayer.js b/node_modules/react-pdf/dist/esm/Page/TextLayer.js
-index b28f117..559de44 100644
---- a/node_modules/react-pdf/dist/esm/Page/TextLayer.js
-+++ b/node_modules/react-pdf/dist/esm/Page/TextLayer.js
-@@ -4,7 +4,7 @@ import React from 'react';
- import { createPortal } from 'react-dom';
+diff --git a/node_modules/react-pdf/dist/esm/Page/AnnotationLayer.js b/node_modules/react-pdf/dist/esm/Page/AnnotationLayer.js
+index a7372c3..85038e2 100644
+--- a/node_modules/react-pdf/dist/esm/Page/AnnotationLayer.js
++++ b/node_modules/react-pdf/dist/esm/Page/AnnotationLayer.js
+@@ -1,6 +1,6 @@
+ import React, { Fragment } from 'react';
  import invariant from 'tiny-invariant';
- import warning from 'warning';
 -import * as pdfjs from 'pdfjs-dist';
-+import { renderTextLayer, setLayerDimensions } from 'pdfjs-dist';
++import { AnnotationLayer } from 'pdfjs-dist';
  import usePageContext from '../shared/hooks/usePageContext.js';
  import useResolver from '../shared/hooks/useResolver.js';
  import { cancelRunningTask } from '../shared/utils.js';
-@@ -107,7 +107,7 @@
+@@ -29,7 +29,7 @@
+         linkService,
+         downloadManager: undefined,
+         annotationEditorUIManager: undefined,
+-        eventBus: page.eventBus,
++        eventBus: page.eventBus, // Note: even-bus is required in v4 of PDF.js
+         renderForms: true,
+         enableScripting: false,
+     };
+diff --git a/node_modules/react-pdf/dist/esm/Page/TextLayer.js b/node_modules/react-pdf/dist/esm/Page/TextLayer.js
+index 5c12891..55716e9 100644
+--- a/node_modules/react-pdf/dist/esm/Page/TextLayer.js
++++ b/node_modules/react-pdf/dist/esm/Page/TextLayer.js
+@@ -3,7 +3,7 @@
+ import React, { Fragment } from 'react';
+ import invariant from 'tiny-invariant';
+ import warning from 'warning';
+-import * as pdfjs from 'pdfjs-dist';
++import { TextLayer } from 'pdfjs-dist';
+ import usePageContext from '../shared/hooks/usePageContext.js';
+ import useResolver from '../shared/hooks/useResolver.js';
+ import { cancelRunningTask } from '../shared/utils.js';
+@@ -34,7 +34,7 @@
+     if (!textLayer) {
+         return;
      }
-     function onRenderSuccess() {
-         if (textLayer) {
--            const { textContentSource, viewport } = textLayer;
-+            const { textContent, viewport } = textLayer;
-             const container = textLayerDiv.current;
-             const stream = textContent;
-             setLayerDimensions(container, viewport);
-@@ -115,7 +115,7 @@
-                 container,
-                 textContent: stream,
-                 viewport,
--                textDivs: [],
-+                textContentSource: stream,
-             }).promise;
-             setRunningTask(renderTask);
+-    const { textDivs, textContentItemsStr, } = textLayer;
++    const { textDivs, textContentItemsStr, enhanceTextSelection, stream, style } = textLayer;
+     if (textDivs.length) {
+         container.append(...textDivs);
+     }
+@@ -75,7 +75,7 @@
          }
+         try {
+             const { value: textLayer } = await resolver;
+-            renderTextLayer({ textLayer, container });
++            renderTextLayer({ textLayer, container, viewport: viewportWithDonuts });
+         }
+         catch (error) {
+             warning(false, error.toString());
