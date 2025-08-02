@@ -1,13 +1,14 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { PdfDocument } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
-import { X, Download, FileJson2 } from 'lucide-react';
+import { X, Download, FileJson2, Loader2, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Document, Page } from 'react-pdf';
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -18,6 +19,14 @@ interface PdfViewerProps {
 
 const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose }) => {
   const { toast } = useToast();
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [scale, setScale] = useState(1.0);
+
+  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+    setNumPages(numPages);
+    setPageNumber(1);
+  }
 
   const downloadOriginal = async () => {
      if (!supabase) {
@@ -42,7 +51,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose }) => {
   };
 
   const exportAnnotations = () => {
-    // Note: Annotations are no longer supported with this viewer
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(pdf.annotations || {}, null, 2));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
@@ -59,6 +67,14 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose }) => {
         <div className="flex items-center gap-2">
             <TooltipProvider>
               <Tooltip>
+                <TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={() => setScale(s => s * 1.2)}><ZoomIn className="h-4 w-4" /></Button></TooltipTrigger>
+                <TooltipContent><p>Zoom In</p></TooltipContent>
+              </Tooltip>
+               <Tooltip>
+                <TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={() => setScale(s => s / 1.2)} disabled={scale <= 0.5}><ZoomOut className="h-4 w-4" /></Button></TooltipTrigger>
+                <TooltipContent><p>Zoom Out</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
                 <TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={downloadOriginal} disabled={!supabase}><Download className="h-4 w-4" /></Button></TooltipTrigger>
                 <TooltipContent><p>Download Original PDF</p></TooltipContent>
               </Tooltip>
@@ -70,13 +86,36 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose }) => {
             <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
         </div>
       </CardHeader>
-      <CardContent className="p-0 flex-grow">
-          <iframe
-            src={pdf.url}
-            title={pdf.name}
-            className="w-full h-full border-0"
-          />
+      <CardContent className="p-0 flex-grow overflow-auto bg-gray-200 dark:bg-gray-800">
+          <div className="p-4 flex justify-center">
+            <Document
+                file={pdf.url}
+                onLoadSuccess={onDocumentLoadSuccess}
+                loading={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}
+                className="flex flex-col items-center"
+            >
+                <Page 
+                    pageNumber={pageNumber} 
+                    scale={scale} 
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                />
+            </Document>
+          </div>
       </CardContent>
+       {numPages && (
+        <div className="flex items-center justify-center p-2 bg-muted/50 border-t">
+          <Button variant="ghost" size="icon" onClick={() => setPageNumber(p => Math.max(1, p - 1))} disabled={pageNumber <= 1}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm font-medium">
+            Page {pageNumber} of {numPages}
+          </span>
+          <Button variant="ghost" size="icon" onClick={() => setPageNumber(p => Math.min(numPages, p + 1))} disabled={pageNumber >= numPages}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </Card>
   );
 };
