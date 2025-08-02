@@ -49,7 +49,7 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, selectedPdfId, onPdfSelect, loa
     try {
       // Delete from Supabase
       const { error: storageError } = await supabase.storage
-        .from('pdf_documents')
+        .from('main')
         .remove([pdf.storagePath]);
 
       if (storageError) {

@@ -129,7 +129,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
         return;
     }
     try {
-        const { data, error } = await supabase.storage.from('pdf_documents').download(pdf.storagePath);
+        const { data, error } = await supabase.storage.from('main').download(pdf.storagePath);
         if (error) throw error;
         const blob = new Blob([data], { type: 'application/pdf' });
         const url = window.URL.createObjectURL(blob);

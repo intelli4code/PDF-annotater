@@ -62,13 +62,13 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({ userId, appId }) => {
 
     try {
       const { error: uploadError } = await supabase.storage
-        .from('pdf_documents')
+        .from('main')
         .upload(storagePath, selectedFile);
 
       if (uploadError) throw uploadError;
 
       const { data: publicUrlData } = supabase.storage
-        .from('pdf_documents')
+        .from('main')
         .getPublicUrl(storagePath);
       
       if (!publicUrlData.publicUrl) {
