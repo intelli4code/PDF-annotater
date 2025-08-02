@@ -1,10 +1,14 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://pdf-annotator-pro-96wd4-supabase.firebaseapp.com'
-const supabaseAnonKey = 'AIzaSyC1S0AJ_4ZjFviRVjMdWU8XCCiGQqYNR9I'
+const supabaseUrl = 'your-supabase-url-placeholder'
+const supabaseAnonKey = 'your-supabase-anon-key-placeholder'
 
-if (supabaseUrl === 'your-supabase-url-placeholder' || supabaseAnonKey === 'your-supabase-anon-key-placeholder') {
-  console.warn('Supabase URL or Anon Key is not set. Please provide them in your environment variables or replace placeholders.');
+let supabase: SupabaseClient | null = null;
+
+if (supabaseUrl !== 'your-supabase-url-placeholder' && supabaseAnonKey !== 'your-supabase-anon-key-placeholder') {
+  supabase = createClient(supabaseUrl, supabaseAnonKey);
+} else {
+  console.warn('Supabase URL or Anon Key is not set. PDF upload and delete functionality will be disabled. Please provide them in src/lib/supabase.ts');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export { supabase };

@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { UploadCloud, Loader2 } from 'lucide-react';
+import { UploadCloud, Loader2, AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface PdfUploaderProps {
   userId: string;
@@ -44,6 +45,15 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({ userId, appId }) => {
         description: 'Please select a PDF file to upload.',
       });
       return;
+    }
+    
+    if (!supabase) {
+        toast({
+            variant: 'destructive',
+            title: 'Supabase Not Configured',
+            description: 'Please configure your Supabase credentials in src/lib/supabase.ts to upload files.',
+        });
+        return;
     }
 
     setIsUploading(true);
@@ -94,6 +104,29 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({ userId, appId }) => {
       }
     }
   };
+
+  if (!supabase) {
+    return (
+       <Card>
+        <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+            <UploadCloud className="h-5 w-5" />
+            Upload New PDF
+            </CardTitle>
+        </CardHeader>
+        <CardContent>
+            <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Supabase Not Configured</AlertTitle>
+                <AlertDescription>
+                Please set your Supabase URL and anonymous key in{' '}
+                <code>src/lib/supabase.ts</code> to enable file uploads.
+                </AlertDescription>
+            </Alert>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card>

@@ -37,6 +37,15 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, selectedPdfId, onPdfSelect, loa
   const { toast } = useToast();
 
   const handleDelete = async (pdf: PdfDocument) => {
+    if (!supabase) {
+      toast({
+          variant: 'destructive',
+          title: 'Supabase Not Configured',
+          description: 'Please configure your Supabase credentials to delete files.',
+      });
+      return;
+    }
+    
     try {
       // Delete from Supabase
       const { error: storageError } = await supabase.storage
@@ -95,7 +104,7 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, selectedPdfId, onPdfSelect, loa
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0 opacity-0 group-hover:opacity-100">
+                      <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0 opacity-0 group-hover:opacity-100" disabled={!supabase}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </AlertDialogTrigger>

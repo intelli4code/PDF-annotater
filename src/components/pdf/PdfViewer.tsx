@@ -124,6 +124,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   };
 
   const downloadOriginal = async () => {
+     if (!supabase) {
+        toast({ variant: 'destructive', title: 'Download Failed', description: "Supabase not configured." });
+        return;
+    }
     try {
         const { data, error } = await supabase.storage.from('pdf_documents').download(pdf.storagePath);
         if (error) throw error;
@@ -158,7 +162,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
         <div className="flex items-center gap-2">
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={downloadOriginal}><Download className="h-4 w-4" /></Button></TooltipTrigger>
+                <TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={downloadOriginal} disabled={!supabase}><Download className="h-4 w-4" /></Button></TooltipTrigger>
                 <TooltipContent><p>Download Original PDF</p></TooltipContent>
               </Tooltip>
               <Tooltip>
