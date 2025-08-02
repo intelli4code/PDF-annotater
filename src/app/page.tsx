@@ -3,16 +3,17 @@
 import type { FC } from 'react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { db } from '@/lib/firebase';
+import { db, signIn } from '@/lib/firebase';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import type { PdfDocument } from '@/types';
 import PdfUploader from '@/components/pdf/PdfUploader';
 import PdfList from '@/components/pdf/PdfList';
 import PdfViewer from '@/components/pdf/PdfViewer';
-import { Loader2, FileText } from 'lucide-react';
+import { Loader2, FileText, LogIn } from 'lucide-react';
 import { pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
+import { Button } from '@/components/ui/button';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
@@ -72,6 +73,10 @@ const App: FC = () => {
         <FileText className="h-16 w-16 text-primary" />
         <h1 className="mt-4 text-2xl font-bold">PDF Annotator Pro</h1>
         <p className="mt-2 text-muted-foreground">Please sign in to manage your documents.</p>
+        <Button onClick={signIn} className="mt-6">
+          <LogIn className="mr-2 h-4 w-4" />
+          Sign In Anonymously
+        </Button>
       </div>
     );
   }
