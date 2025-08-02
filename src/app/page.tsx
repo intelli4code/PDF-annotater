@@ -1,7 +1,7 @@
 'use client';
 
 import type { FC } from 'react';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { db, signIn } from '@/lib/firebase';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
@@ -15,22 +15,19 @@ import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { Button } from '@/components/ui/button';
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/`,
-).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 declare const __app_id: string;
 
 const App: FC = () => {
   const { user, loading: authLoading } = useAuth();
-  const [pdfs, setPdfs] = useState<PdfDocument[]>([]);
-  const [selectedPdf, setSelectedPdf] = useState<PdfDocument | null>(null);
-  const [loadingPdfs, setLoadingPdfs] = useState(true);
+  const [pdfs, setPdfs] = React.useState<PdfDocument[]>([]);
+  const [selectedPdf, setSelectedPdf] = React.useState<PdfDocument | null>(null);
+  const [loadingPdfs, setLoadingPdfs] = React.useState(true);
 
-  const appId = useMemo(() => (typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'), []);
+  const appId = React.useMemo(() => (typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'), []);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (user) {
       setLoadingPdfs(true);
       const pdfsCollectionPath = `artifacts/${appId}/users/${user.uid}/pdfs`;
