@@ -10,12 +10,9 @@ import PdfUploader from '@/components/pdf/PdfUploader';
 import PdfList from '@/components/pdf/PdfList';
 import PdfViewer from '@/components/pdf/PdfViewer';
 import { Loader2, FileText, LogIn } from 'lucide-react';
-import { pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { Button } from '@/components/ui/button';
-
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.js`;
 
 declare const __app_id: string;
 
