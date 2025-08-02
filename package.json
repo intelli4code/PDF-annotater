@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "postinstall": "cp ./node_modules/pdfjs-dist/build/pdf.worker.min.js ./public/"
+    "postinstall": "mkdir -p ./public && cp ./node_modules/pdfjs-dist/build/pdf.worker.min.js ./public/"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.14.1",
