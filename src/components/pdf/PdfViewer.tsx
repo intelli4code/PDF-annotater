@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { X, Download, FileJson2, Loader2, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Document, Page } from 'react-pdf';
+import 'react-pdf/dist/esm/Page/TextLayer.css';
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -97,7 +98,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose }) => {
                 <Page 
                     pageNumber={pageNumber} 
                     scale={scale} 
-                    renderTextLayer={false}
                     renderAnnotationLayer={false}
                 />
             </Document>
