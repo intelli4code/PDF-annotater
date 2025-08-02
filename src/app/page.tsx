@@ -15,7 +15,10 @@ import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { Button } from '@/components/ui/button';
 
-// The worker is now handled by Next.js's bundler, so we no longer set the workerSrc manually.
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/`,
+).toString();
 
 declare const __app_id: string;
 
