@@ -1,13 +1,7 @@
 import type { Timestamp } from "firebase/firestore";
 
-export interface Annotation {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  type: 'highlight' | 'marker';
-  id: string;
-}
+// This is a generic type for annotations from react-pdf-viewer
+export type Annotation = any;
 
 export interface PdfDocument {
   id: string;
@@ -15,5 +9,5 @@ export interface PdfDocument {
   url: string;
   storagePath: string;
   createdAt: Timestamp | Date;
-  annotations: { [pageNumber: number]: Annotation[] };
+  annotations: Annotation[];
 }

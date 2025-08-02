@@ -12,6 +12,14 @@ import PdfViewer from '@/components/pdf/PdfViewer';
 import { Loader2, FileText, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+import { pdfjs } from 'react-pdf-viewer';
+
+// Required for react-pdf-viewer
+import '@react-pdf-viewer/core/lib/styles/index.css';
+import '@react-pdf-viewer/default-layout/lib/styles/index.css';
+
+pdfjs.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.js`;
+
 declare const __app_id: string;
 
 const App: FC = () => {

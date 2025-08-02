@@ -1,13 +1,15 @@
 'use client';
 
 import React from 'react';
-import { useToast } from '@/hooks/use-toast';
-import type { PdfDocument } from '@/types';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/lib/supabase';
-import { X, Download, FileJson2 } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import type { PdfDocument, Annotation } from '@/types';
+import { db } from '@/lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+
+import { Viewer, Worker } from '@react-pdf-viewer/core';
+import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
+import type { ToolbarProps, TransformToolbarSlot } from '@react-pdf-viewer/default-layout';
+import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
+import type { RenderHighlightsProps } from '@react-pdf-viewer/highlight';
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -16,67 +18,143 @@ interface PdfViewerProps {
   appId: string;
 }
 
-const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose }) => {
-  const { toast } = useToast();
+const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) => {
+  const [message, setMessage] = React.useState('');
+  let annotationIdCounter = pdf.annotations?.length || 0;
 
-  const downloadOriginal = async () => {
-     if (!supabase) {
-        toast({ variant: 'destructive', title: 'Download Failed', description: "Supabase not configured." });
-        return;
-    }
+  const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
+    ...slot,
+    // Add a Save button to the toolbar
+    Right: () => (
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        {message && (
+          <div style={{
+            color: '#fff',
+            backgroundColor: message.includes('Saved') ? '#28a745' : '#dc3545',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            marginRight: '16px',
+            fontSize: '12px',
+          }}>{message}</div>
+        )}
+        <button
+          style={{
+            backgroundColor: 'hsl(var(--primary))',
+            border: 'none',
+            borderRadius: '4px',
+            color: 'hsl(var(--primary-foreground))',
+            cursor: 'pointer',
+            padding: '8px 12px',
+            marginRight: '8px',
+          }}
+          onClick={saveAnnotations}
+        >
+          Save
+        </button>
+        {slot.Right_2({})}
+        {slot.Right_3({})}
+      </div>
+    ),
+  });
+
+  const renderHighlights = (props: RenderHighlightsProps) => (
+    <div>
+      {pdf.annotations
+        .filter(ann => ann.pageIndex === props.pageIndex)
+        .map((highlight, index) => (
+          <div
+            key={index}
+            style={Object.assign(
+              {},
+              {
+                background: 'yellow',
+                opacity: 0.4,
+              },
+              props.getCssProperties(highlight.highlightAreas[0], props.rotation)
+            )}
+          />
+        ))}
+    </div>
+  );
+
+  const highlightPluginInstance = highlightPlugin({
+    renderHighlights,
+    trigger: Trigger.TextSelection,
+  });
+
+  const { addHighlight } = highlightPluginInstance;
+
+  const saveAnnotations = async () => {
     try {
-        const { data, error } = await supabase.storage.from('main').download(pdf.storagePath);
-        if (error) throw error;
-        const blob = new Blob([data], { type: 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = pdf.name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
-    } catch (error: any) {
-        toast({ variant: 'destructive', title: 'Download Failed', description: error.message });
+      const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
+      await updateDoc(doc(db, pdfDocPath), {
+        annotations: pdf.annotations,
+      });
+      setMessage('Annotations Saved!');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (e: any) {
+      console.error(e);
+      setMessage('Error saving annotations.');
+      setTimeout(() => setMessage(''), 3000);
     }
   };
 
-  const exportAnnotations = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(pdf.annotations || {}, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `${pdf.name.replace('.pdf', '')}_annotations.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-  };
+  const layoutPlugin = defaultLayoutPlugin({
+    sidebarTabs: (defaultTabs) => [
+      defaultTabs[0], // Thumbnails
+    ],
+    transformToolbar: transform,
+  });
 
   return (
-    <Card className="overflow-hidden h-[calc(100vh-12rem)] flex flex-col">
-      <CardHeader className="flex flex-row items-center justify-between bg-muted/50 py-3">
-        <CardTitle className="truncate text-lg" title={pdf.name}>{pdf.name}</CardTitle>
-        <div className="flex items-center gap-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={downloadOriginal} disabled={!supabase}><Download className="h-4 w-4" /></Button></TooltipTrigger>
-                <TooltipContent><p>Download Original PDF</p></TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={exportAnnotations}><FileJson2 className="h-4 w-4" /></Button></TooltipTrigger>
-                <TooltipContent><p>Export Annotations (JSON)</p></TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
-        </div>
-      </CardHeader>
-      <CardContent className="p-0 flex-grow">
-          <iframe
-            src={pdf.url}
-            className="w-full h-full border-0"
-            title={pdf.name}
-          />
-      </CardContent>
-    </Card>
+    <div className="h-[calc(100vh-12rem)] w-full"
+      onMouseUp={(e) => {
+        // Stop the event from bubbling up to the core layer
+        e.stopPropagation();
+
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) {
+          return;
+        }
+
+        const range = selection.getRangeAt(0);
+        if (range.collapsed) {
+          return;
+        }
+
+        addHighlight({
+            highlightAreas: [{
+                height: range.getBoundingClientRect().height,
+                width: range.getBoundingClientRect().width,
+                left: range.getBoundingClientRect().left,
+                top: range.getBoundingClientRect().top,
+                pageIndex: 0 // Placeholder, this needs proper calculation based on viewer API
+            }],
+        });
+        
+        selection.removeAllRanges();
+      }}
+    >
+      <Worker workerUrl="/pdf.worker.min.js">
+        <Viewer
+          fileUrl={pdf.url}
+          plugins={[layoutPlugin, highlightPluginInstance]}
+          initialAnnotations={pdf.annotations}
+          onAnnotationAdd={(annotation) => {
+            (pdf.annotations as Annotation[]).push({ ...annotation, id: `${++annotationIdCounter}` });
+          }}
+          onAnnotationRemove={(annotationId) => {
+            pdf.annotations = (pdf.annotations as Annotation[]).filter((ann) => ann.id !== annotationId);
+          }}
+          onAnnotationUpdate={(annotation) => {
+             const index = (pdf.annotations as Annotation[]).findIndex(ann => ann.id === annotation.id);
+             if (index > -1) {
+                (pdf.annotations as Annotation[])[index] = annotation;
+             }
+          }}
+        />
+      </Worker>
+    </div>
   );
 };
 
