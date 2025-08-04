@@ -9,10 +9,21 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { summarizeText } from '@/ai/flows/summarize-text-flow';
 
 import { Viewer, Worker } from '@react-pdf-viewer/core';
-import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot, highlightPlugin, drawingPlugin, DrawingMode, Trigger  } from '@react-pdf-viewer/default-layout';
-
-import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
-import type { RenderDrawingProps } from '@react-pdf-viewer/drawing';
+import { 
+    defaultLayoutPlugin, 
+    ToolbarProps, 
+    TransformToolbarSlot,
+    highlightPlugin,
+    Trigger,
+    drawingPlugin,
+    DrawingMode,
+} from '@react-pdf-viewer/default-layout';
+import type { 
+    RenderHighlightsProps, 
+    HighlightArea, 
+    HighlightTarget,
+    RenderDrawingProps
+} from '@react-pdf-viewer/default-layout';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +38,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Textarea } from '@/components/ui/textarea';
 import CommentsSidebar from './CommentsSidebar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+
 
 type AnnotationMode = 'highlight' | 'draw' | 'erase';
 
@@ -284,7 +296,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
         onDrawingErase: (props) => {
             const erasedAnnotationId = props.drawing.attributes?.annotationId;
             if (erasedAnnotationId) {
-                removeAnnotation(erasedAnnotationId);
+                removeAnnotation(erasedAnnotationId as string);
             }
         },
     },
