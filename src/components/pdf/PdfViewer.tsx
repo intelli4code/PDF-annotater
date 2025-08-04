@@ -9,21 +9,9 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { summarizeText } from '@/ai/flows/summarize-text-flow';
 
 import { Viewer, Worker } from '@react-pdf-viewer/core';
-import { 
-    defaultLayoutPlugin, 
-    ToolbarProps, 
-    TransformToolbarSlot,
-    highlightPlugin,
-    Trigger,
-    drawingPlugin,
-    DrawingMode,
-} from '@react-pdf-viewer/default-layout';
-import type { 
-    RenderHighlightsProps, 
-    HighlightArea, 
-    HighlightTarget,
-    RenderDrawingProps
-} from '@react-pdf-viewer/default-layout';
+import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot, Trigger, highlightPlugin, drawingPlugin, DrawingMode } from '@react-pdf-viewer/default-layout';
+import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
+import type { RenderDrawingProps } from '@react-pdf-viewer/drawing';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
