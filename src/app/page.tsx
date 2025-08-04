@@ -84,7 +84,7 @@ const App: FC = () => {
   if (authLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-gray-100">
-        <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
       </div>
     );
   }
@@ -92,10 +92,10 @@ const App: FC = () => {
   if (!user) {
     return (
       <div className="flex h-screen w-full flex-col items-center justify-center bg-gray-50">
-        <FileText className="h-16 w-16 text-blue-600" />
+        <FileText className="h-16 w-16 text-primary" />
         <h1 className="mt-4 text-3xl font-bold tracking-tight">PDF Annotator Pro</h1>
         <p className="mt-2 text-lg text-gray-500">Please sign in to manage your documents.</p>
-        <Button onClick={signIn} className="mt-8 rounded-full bg-blue-600 px-8 py-3 text-lg text-white hover:bg-blue-700">
+        <Button onClick={signIn} className="mt-8 rounded-full bg-primary px-8 py-3 text-lg text-primary-foreground hover:bg-primary/90">
           <LogIn className="mr-2 h-5 w-5" />
           Sign In Anonymously
         </Button>
@@ -104,7 +104,7 @@ const App: FC = () => {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-gray-100 text-gray-900">
+    <div className="flex h-screen flex-col bg-background text-foreground">
       {selectedPdf ? (
         <PdfViewer 
           key={selectedPdf.id} 
@@ -116,14 +116,14 @@ const App: FC = () => {
         />
       ) : (
         <>
-          <header className="flex-shrink-0 border-b border-gray-200 bg-white">
+          <header className="flex-shrink-0 border-b border-border bg-card">
             <div className="container mx-auto flex h-16 items-center justify-between px-4">
               <div className="flex items-center gap-3">
-                <FileText className="h-8 w-8 text-blue-600" />
+                <FileText className="h-8 w-8 text-primary" />
                 <h1 className="text-2xl font-bold tracking-tight">PDF Annotator Pro</h1>
               </div>
-              <div className="text-sm text-gray-500">
-                <span className="font-semibold text-gray-800">User:</span> {user.uid.substring(0, 12)}...
+              <div className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">User:</span> {user.uid.substring(0, 12)}...
               </div>
             </div>
           </header>

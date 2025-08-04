@@ -145,9 +145,9 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({ userId, appId }) => {
           accept="application/pdf"
           onChange={handleFileChange}
           disabled={isUploading}
-          className="file:text-blue-600 file:font-semibold"
+          className="file:text-primary file:font-semibold"
         />
-        <Button onClick={handleUpload} disabled={isUploading || !selectedFile} className="w-full bg-blue-600 text-white hover:bg-blue-700">
+        <Button onClick={handleUpload} disabled={isUploading || !selectedFile} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
           {isUploading ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (

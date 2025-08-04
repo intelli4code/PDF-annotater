@@ -100,11 +100,11 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, onPdfSelect, loading, userId, a
                     className="w-full justify-start truncate p-3 h-auto text-left flex flex-col items-start"
                     onClick={() => onPdfSelect(pdf)}
                   >
-                    <span className="font-semibold text-blue-700 flex items-center gap-2">
+                    <span className="font-semibold text-primary flex items-center gap-2">
                         <FileText className="h-4 w-4 flex-shrink-0" />
                         <span className="truncate">{pdf.name}</span>
                     </span>
-                    <span className="text-xs text-gray-500 mt-1">
+                    <span className="text-xs text-muted-foreground mt-1">
                         {pdf.createdAt ? new Date(pdf.createdAt.toString()).toLocaleDateString() : 'Date unknown'}
                     </span>
                   </Button>
@@ -133,7 +133,7 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, onPdfSelect, loading, userId, a
               ))}
             </div>
           ) : (
-            <div className="text-center text-gray-500 pt-10">
+            <div className="text-center text-muted-foreground pt-10">
                 <FileText className="mx-auto h-12 w-12 text-gray-400" />
                 <h3 className="mt-4 text-lg font-medium">No Documents Found</h3>
                 <p className="mt-1 text-sm">
