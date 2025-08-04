@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { FC } from 'react';
@@ -33,11 +34,20 @@ const App: FC = () => {
       const q = query(collection(db, pdfsCollectionPath), orderBy('createdAt', 'desc'));
       
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const userPdfs = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate(),
-        } as PdfDocument));
+        const userPdfs = querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            // Ensure annotations are always an array
+            const annotations = data.annotations && typeof data.annotations === 'object' && !Array.isArray(data.annotations)
+                ? Object.values(data.annotations)
+                : (data.annotations || []);
+
+            return {
+                id: doc.id,
+                ...data,
+                createdAt: data.createdAt?.toDate(),
+                annotations: annotations,
+            } as PdfDocument;
+        });
         setPdfs(userPdfs);
 
         if (selectedPdf) {

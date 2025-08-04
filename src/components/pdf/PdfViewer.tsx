@@ -1,3 +1,4 @@
+
 'use client';
 
 import React from 'react';
@@ -18,13 +19,25 @@ interface PdfViewerProps {
   appId: string;
 }
 
+// Function to ensure annotations are always an array
+const getAnnotationsArray = (annotations: any): Annotation[] => {
+    if (Array.isArray(annotations)) {
+        return annotations;
+    }
+    if (annotations && typeof annotations === 'object') {
+        return Object.values(annotations);
+    }
+    return [];
+};
+
+
 const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) => {
   const [message, setMessage] = React.useState('');
-  const [annotations, setAnnotations] = React.useState<Annotation[]>(pdf.annotations || []);
+  const [annotations, setAnnotations] = React.useState<Annotation[]>(getAnnotationsArray(pdf.annotations));
   let annotationIdCounter = annotations.length;
 
   React.useEffect(() => {
-    setAnnotations(pdf.annotations || []);
+    setAnnotations(getAnnotationsArray(pdf.annotations));
   }, [pdf]);
 
   const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
@@ -90,7 +103,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   const saveAnnotations = async () => {
     try {
       const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
-      // Ensure we are saving the latest annotations from the state
+      // Ensure we are saving the latest annotations from the state as an array
       await updateDoc(doc(db, pdfDocPath), {
         annotations: annotations,
       });
