@@ -6,7 +6,7 @@ import React, from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { db, signIn } from '@/lib/firebase';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
-import type { PdfDocument } from '@/types';
+import type { PdfDocument, Annotation } from '@/types';
 import PdfUploader from '@/components/pdf/PdfUploader';
 import PdfList from '@/components/pdf/PdfList';
 import PdfViewer from '@/components/pdf/PdfViewer';
@@ -38,13 +38,15 @@ const App: FC = () => {
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const userPdfs = querySnapshot.docs.map(doc => {
             const data = doc.data();
-            const annotations = Array.isArray(data.annotations) ? data.annotations : [];
+            const annotations = Array.isArray(data.annotations) 
+              ? data.annotations 
+              : (data.annotations && typeof data.annotations === 'object' ? Object.values(data.annotations) : []);
 
             return {
                 id: doc.id,
                 ...data,
                 createdAt: data.createdAt?.toDate(),
-                annotations: annotations,
+                annotations: annotations.filter(Boolean),
             } as PdfDocument;
         });
         setPdfs(userPdfs);
@@ -90,8 +92,8 @@ const App: FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card">
+    <div className="flex h-screen flex-col bg-background text-foreground">
+      <header className="flex-shrink-0 border-b border-border bg-card">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <FileText className="h-6 w-6 text-primary" />
@@ -103,10 +105,10 @@ const App: FC = () => {
         </div>
       </header>
 
-      <main className="container mx-auto p-4 md:p-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <main className="container mx-auto flex-grow p-4 md:p-6">
+        <div className="grid h-full grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="lg:col-span-4 xl:col-span-3">
-            <div className="space-y-6">
+            <div className="flex h-full flex-col space-y-6">
               <PdfUploader userId={user.uid} appId={appId} />
               <PdfList
                 pdfs={pdfs}
@@ -123,7 +125,7 @@ const App: FC = () => {
             {selectedPdf ? (
               <PdfViewer pdf={selectedPdf} onClose={() => setSelectedPdf(null)} userId={user.uid} appId={appId} />
             ) : (
-              <div className="flex h-[calc(100vh-12rem)] items-center justify-center rounded-lg border-2 border-dashed bg-card">
+              <div className="flex h-full items-center justify-center rounded-lg border-2 border-dashed bg-card">
                 <div className="text-center">
                   <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
                   <h3 className="mt-4 text-lg font-medium">No PDF Selected</h3>

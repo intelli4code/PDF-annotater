@@ -41,7 +41,8 @@ const getAnnotationsArray = (annotations: any): Annotation[] => {
         return annotations.filter(a => a && a.highlightAreas);
     }
     if (annotations && typeof annotations === 'object') {
-        return Object.values(annotations).filter((a: any) => a && a.highlightAreas);
+        const annArray = Object.values(annotations).filter((a: any) => a && a.highlightAreas);
+        return annArray;
     }
     return [];
 };
@@ -62,13 +63,12 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   const saveAnnotations = async (newAnnotations: Annotation[]) => {
     try {
       const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
+      // Firestore works better with object maps if you're using IDs as keys.
+      // But we will save as an array to be consistent.
       await updateDoc(doc(db, pdfDocPath), {
         annotations: newAnnotations,
       });
-      toast({
-        title: "Annotations Saved",
-        description: "Your annotations have been successfully saved.",
-      });
+      // Don't toast on auto-save, it's too noisy.
     } catch (e: any) {
       console.error(e);
       toast({
@@ -81,6 +81,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   
   const handleSave = () => {
     saveAnnotations(annotations);
+     toast({
+      title: "Annotations Saved",
+      description: "Your annotations have been successfully saved.",
+    });
   };
 
 
@@ -139,7 +143,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
         type: type,
         comment: '',
         pageIndex: highlightArea.pageIndex,
-        content: highlightArea.content,
+        content: {
+            text: highlightArea.content.text || '',
+            image: highlightArea.content.image || '',
+        },
     };
     setAnnotations(prev => {
         const updatedAnnotations = [...prev, newAnnotation];
@@ -161,7 +168,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
       {annotations
         .filter(ann => ann.pageIndex === props.pageIndex)
         .map((ann, index) => (
-          <React.Fragment key={index}>
+          <React.Fragment key={ann.id}>
             <Popover>
               <PopoverTrigger asChild>
                 <div
@@ -340,7 +347,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   );
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] w-full">
+    <div className="flex h-full w-full">
         <div className="flex-grow h-full w-full relative border rounded-lg overflow-hidden">
             <AnnotationToolbar />
             <Worker workerUrl={workerUrl}>

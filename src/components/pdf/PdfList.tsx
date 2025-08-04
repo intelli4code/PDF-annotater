@@ -75,23 +75,23 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, selectedPdfId, onPdfSelect, loa
   };
 
   return (
-    <Card>
+    <Card className="flex-grow flex flex-col">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <List className="h-5 w-5" />
           My Documents
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-96">
+      <CardContent className="flex-grow">
+        <ScrollArea className="h-full">
           {loading ? (
-            <div className="space-y-2">
-              {[...Array(3)].map((_, i) => (
+            <div className="space-y-2 pr-4">
+              {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
           ) : pdfs.length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-2 pr-4">
               {pdfs.map(pdf => (
                 <div key={pdf.id} className="group flex items-center gap-2">
                   <Button
@@ -127,7 +127,7 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, selectedPdfId, onPdfSelect, loa
               ))}
             </div>
           ) : (
-            <p className="text-center text-sm text-muted-foreground">No documents uploaded yet.</p>
+            <p className="text-center text-sm text-muted-foreground pt-10">No documents uploaded yet.</p>
           )}
         </ScrollArea>
       </CardContent>
