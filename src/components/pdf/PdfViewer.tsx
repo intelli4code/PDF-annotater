@@ -9,10 +9,17 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { summarizeText } from '@/ai/flows/summarize-text-flow';
 
 import { Viewer, Worker } from '@react-pdf-viewer/core';
-import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot, DrawingMode, RenderDrawingProps } from '@react-pdf-viewer/default-layout';
-import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
-import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
-
+import { 
+    defaultLayoutPlugin, 
+    ToolbarProps, 
+    TransformToolbarSlot,
+    HighlightArea,
+    HighlightTarget,
+    RenderHighlightsProps,
+    DrawingMode,
+    RenderDrawingProps,
+    Trigger
+} from '@react-pdf-viewer/default-layout';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -165,8 +172,18 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     });
   };
 
-  const renderHighlights = (props: RenderHighlightsProps) => (
+  const layoutPluginInstance = defaultLayoutPlugin();
+  const {
+      activateDrawingMode,
+      activateHighlighting,
+      getSelection,
+      renderHighlights,
+      renderDrawing,
+  } = layoutPluginInstance;
+
+  const renderHighlightsDecorator = (props: RenderHighlightsProps) => (
     <div>
+      {renderHighlights(props)}
       {annotations
         .filter(ann => ann.type === 'highlight' && ann.pageIndex === props.pageIndex && ann.highlightAreas)
         .flatMap(ann => 
@@ -210,7 +227,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
             ))
         )}
     </div>
-);
+  );
 
 
   const handleSummarizeSelection = useCallback(
@@ -243,48 +260,25 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     [toast]
   );
   
-  const defaultLayoutPluginInstance = defaultLayoutPlugin();
-  const {
-    activateDrawingMode,
-    drawingPluginInstance,
-  } = defaultLayoutPluginInstance;
-  
-  const highlightPluginInstance = highlightPlugin({
-    renderHighlights,
-    trigger: Trigger.TextSelection,
-    onHighlight: (areas) => {
-      if (annotationMode !== 'highlight') return;
-      const newAnnotation: Annotation = {
-        id: `${Date.now()}`,
-        highlightAreas: areas,
-        type: 'highlight',
-        comment: '',
-        pageIndex: areas[0].pageIndex,
-        content: {
-            text: areas.map(a => a.content.text).join(' '),
-            image: '',
-        },
-      };
-      addAnnotation(newAnnotation);
-    },
-  });
-
-  const { getSelection } = highlightPluginInstance;
-
-
   useEffect(() => {
-    if (annotationMode === 'draw') {
+    if (annotationMode === 'highlight') {
+        activateHighlighting(Trigger.TextSelection);
+        activateDrawingMode(DrawingMode.None);
+    } else if (annotationMode === 'draw') {
+        activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.Freehand, {
             color: drawColor,
             opacity: drawOpacity,
             width: drawWidth,
         });
     } else if (annotationMode === 'erase') {
+        activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.Eraser);
     } else {
+        activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.None);
     }
-  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode]);
+  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode, activateHighlighting]);
 
   const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
       ...slot,
@@ -299,13 +293,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
       ZoomOut: () => <></>,
   });
   
-  const layoutPlugin = defaultLayoutPlugin({
-    sidebarTabs: (defaultTabs) => [],
-    transformToolbar: transform,
-    highlightPluginInstance,
-    drawingPluginInstance,
-  });
-
   const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
   
   const AnnotationToolbar = () => (
@@ -404,7 +391,38 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                 <Worker workerUrl={workerUrl}>
                     <Viewer
                     fileUrl={pdf.url}
-                    plugins={[layoutPlugin]}
+                    plugins={[layoutPluginInstance]}
+                    onHighlight={(areas) => {
+                      if (annotationMode !== 'highlight') return;
+                      const newAnnotation: Annotation = {
+                        id: `${Date.now()}`,
+                        highlightAreas: areas,
+                        type: 'highlight',
+                        comment: '',
+                        pageIndex: areas[0].pageIndex,
+                        content: {
+                            text: areas.map(a => a.content.text).join(' '),
+                            image: '',
+                        },
+                      };
+                      addAnnotation(newAnnotation);
+                    }}
+                    onDrawingAdd={(props) => {
+                       const { pageIndex, drawing } = props;
+                        const newAnnotation: Annotation = {
+                          id: `${Date.now()}`,
+                          type: 'draw',
+                          pageIndex,
+                          paths: [drawing],
+                          comment: '',
+                          color: drawing.color,
+                          opacity: drawing.opacity,
+                          width: drawing.width,
+                        };
+                        addAnnotation(newAnnotation);
+                    }}
+                    renderHighlights={renderHighlightsDecorator}
+                    renderDrawing={renderDrawing}
                     />
                 </Worker>
             </div>
