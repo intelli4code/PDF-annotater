@@ -37,9 +37,9 @@ const App: FC = () => {
         const userPdfs = querySnapshot.docs.map(doc => {
             const data = doc.data();
             // Ensure annotations are always an array
-            const annotations = data.annotations && typeof data.annotations === 'object' && !Array.isArray(data.annotations)
-                ? Object.values(data.annotations)
-                : (data.annotations || []);
+            const annotations = Array.isArray(data.annotations) 
+              ? data.annotations 
+              : (data.annotations && typeof data.annotations === 'object' ? Object.values(data.annotations) : []);
 
             return {
                 id: doc.id,

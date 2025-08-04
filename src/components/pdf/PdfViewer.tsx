@@ -4,13 +4,25 @@
 import React from 'react';
 import type { PdfDocument, Annotation } from '@/types';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { doc, updateDoc } from 'firebase/firestore';
 
 import { Viewer, Worker } from '@react-pdf-viewer/core';
-import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
-import type { ToolbarProps, TransformToolbarSlot } from '@react-pdf-viewer/default-layout';
+import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot } from '@react-pdf-viewer/default-layout';
 import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
-import type { RenderHighlightsProps } from '@react-pdf-viewer/highlight';
+import type { RenderHighlightsProps, HighlightArea } from '@react-pdf-viewer/highlight';
+
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
+import { Highlighter, Edit, Eraser, Download, FileJson, Save, X } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+type AnnotationType = 'highlight' | 'marker';
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -19,77 +31,123 @@ interface PdfViewerProps {
   appId: string;
 }
 
-// Function to ensure annotations are always an array
 const getAnnotationsArray = (annotations: any): Annotation[] => {
     if (Array.isArray(annotations)) {
-        return annotations;
+        return annotations.filter(a => a && a.highlightAreas);
     }
     if (annotations && typeof annotations === 'object') {
-        return Object.values(annotations);
+        return Object.values(annotations).filter((a: any) => a && a.highlightAreas);
     }
     return [];
 };
 
 
 const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) => {
-  const [message, setMessage] = React.useState('');
   const [annotations, setAnnotations] = React.useState<Annotation[]>(getAnnotationsArray(pdf.annotations));
-  let annotationIdCounter = annotations.length;
+  const [annotationType, setAnnotationType] = React.useState<AnnotationType>('highlight');
+  const { toast } = useToast();
 
   React.useEffect(() => {
     setAnnotations(getAnnotationsArray(pdf.annotations));
   }, [pdf]);
 
-  const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
-    ...slot,
-    // Add a Save button to the toolbar
-    Right: () => (
-      <div style={{ display: 'flex', alignItems: 'center' }}>
-        {message && (
-          <div style={{
-            color: '#fff',
-            backgroundColor: message.includes('Saved') ? '#28a745' : '#dc3545',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            marginRight: '16px',
-            fontSize: '12px',
-          }}>{message}</div>
-        )}
-        <button
-          style={{
-            backgroundColor: 'hsl(var(--primary))',
-            border: 'none',
-            borderRadius: '4px',
-            color: 'hsl(var(--primary-foreground))',
-            cursor: 'pointer',
-            padding: '8px 12px',
-            marginRight: '8px',
-          }}
-          onClick={saveAnnotations}
-        >
-          Save
-        </button>
-        {slot.Right_2({})}
-        {slot.Right_3({})}
-      </div>
-    ),
-  });
+  const saveAnnotations = async () => {
+    try {
+      const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
+      await updateDoc(doc(db, pdfDocPath), {
+        annotations: annotations,
+      });
+      toast({
+        title: "Annotations Saved",
+        description: "Your annotations have been successfully saved.",
+      });
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        variant: "destructive",
+        title: "Save Failed",
+        description: e.message || 'An unexpected error occurred while saving annotations.',
+      });
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!supabase) {
+        toast({
+            variant: 'destructive',
+            title: 'Supabase Not Configured',
+            description: 'Please configure Supabase to download files.',
+        });
+        return;
+    }
+    try {
+        const { data, error } = await supabase.storage.from('main').download(pdf.storagePath);
+        if (error) throw error;
+        const blob = new Blob([data], { type: 'application/pdf' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = pdf.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } catch (error: any) {
+        toast({
+            variant: 'destructive',
+            title: 'Download Failed',
+            description: error.message || 'Could not download the PDF.',
+        });
+    }
+  };
+
+  const handleExport = () => {
+      try {
+          const jsonString = JSON.stringify(annotations, null, 2);
+          const blob = new Blob([jsonString], { type: 'application/json' });
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = `${pdf.name.replace('.pdf', '')}_annotations.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+      } catch (error: any) {
+          toast({
+              variant: 'destructive',
+              title: 'Export Failed',
+              description: 'Could not export annotations.',
+          });
+      }
+  };
+
+  const addAnnotation = (highlightArea: HighlightArea, type: AnnotationType) => {
+    const newAnnotation: Annotation = {
+        id: `${Date.now()}`,
+        highlightAreas: [highlightArea],
+        type: type,
+        pageIndex: highlightArea.pageIndex,
+    };
+    setAnnotations(prev => [...prev, newAnnotation]);
+  };
 
   const renderHighlights = (props: RenderHighlightsProps) => (
     <div>
       {annotations
         .filter(ann => ann.pageIndex === props.pageIndex)
-        .map((highlight, index) => (
+        .map((ann, index) => (
           <div
             key={index}
             style={Object.assign(
               {},
               {
-                background: 'yellow',
+                background: ann.type === 'highlight' ? 'yellow' : 'red',
                 opacity: 0.4,
               },
-              props.getCssProperties(highlight.highlightAreas[0], props.rotation)
+              props.getCssProperties(ann.highlightAreas[0], props.rotation)
             )}
+            onClick={() => {
+              if (annotationType === 'eraser') {
+                setAnnotations(prev => prev.filter(a => a.id !== ann.id));
+              }
+            }}
           />
         ))}
     </div>
@@ -98,66 +156,94 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   const highlightPluginInstance = highlightPlugin({
     renderHighlights,
     trigger: Trigger.TextSelection,
+    onHighlight: (areas) => {
+        if (annotationType !== 'eraser') {
+            addAnnotation(areas[0], annotationType);
+        }
+    },
   });
 
-  const saveAnnotations = async () => {
-    try {
-      const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
-      // Ensure we are saving the latest annotations from the state as an array
-      await updateDoc(doc(db, pdfDocPath), {
-        annotations: annotations,
-      });
-      setMessage('Annotations Saved!');
-      setTimeout(() => setMessage(''), 3000);
-    } catch (e: any) {
-      console.error(e);
-      setMessage('Error saving annotations.');
-      setTimeout(() => setMessage(''), 3000);
-    }
-  };
-
-  const handleAnnotationAdd = (annotation: Annotation) => {
-    const newAnnotation = { ...annotation, id: `${++annotationIdCounter}` };
-    setAnnotations(prev => [...prev, newAnnotation]);
-  };
-
-  const handleAnnotationRemove = (annotationId: string) => {
-    setAnnotations(prev => prev.filter((ann) => ann.id !== annotationId));
-  };
+  const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
+      ...slot,
+      // Hide the default annotation tools
+      Open: () => <></>,
+      Download: () => <></>,
+      SwitchTheme: () => <></>,
+      EnterFullScreen: () => <></>,
+      Print: () => <></>,
+  });
   
-  const handleAnnotationUpdate = (annotation: Annotation) => {
-    setAnnotations(prev => {
-        const index = prev.findIndex(ann => ann.id === annotation.id);
-        if (index > -1) {
-           const newAnnotations = [...prev];
-           newAnnotations[index] = annotation;
-           return newAnnotations;
-        }
-        return prev;
-    });
-  };
-
   const layoutPlugin = defaultLayoutPlugin({
-    sidebarTabs: (defaultTabs) => [
-      defaultTabs[0], // Thumbnails
-    ],
+    sidebarTabs: (defaultTabs) => [defaultTabs[0]], // Show only thumbnails
     transformToolbar: transform,
   });
 
   const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+  
+  const AnnotationToolbar = () => (
+    <div className="absolute top-2 right-2 z-10 bg-card p-2 rounded-lg shadow-md border flex gap-1">
+      <TooltipProvider>
+          <Tooltip>
+              <TooltipTrigger asChild>
+                  <Button variant={annotationType === 'highlight' ? 'default' : 'ghost'} size="icon" onClick={() => setAnnotationType('highlight')}>
+                      <Highlighter className="h-5 w-5" />
+                  </Button>
+              </TooltipTrigger>
+              <TooltipContent>Highlight (Yellow)</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+              <TooltipTrigger asChild>
+                  <Button variant={annotationType === 'marker' ? 'default' : 'ghost'} size="icon" onClick={() => setAnnotationType('marker')}>
+                      <Edit className="h-5 w-5" />
+                  </Button>
+              </TooltipTrigger>
+              <TooltipContent>Marker (Red)</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+              <TooltipTrigger asChild>
+                  <Button variant={annotationType === 'eraser' ? 'default' : 'ghost'} size="icon" onClick={() => setAnnotationType('eraser')}>
+                      <Eraser className="h-5 w-5" />
+                  </Button>
+              </TooltipTrigger>
+              <TooltipContent>Eraser</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+              <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={saveAnnotations}><Save className="h-5 w-5" /></Button>
+              </TooltipTrigger>
+              <TooltipContent>Save Annotations</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+              <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={handleDownload}><Download className="h-5 w-5" /></Button>
+              </TooltipTrigger>
+              <TooltipContent>Download PDF</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+              <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={handleExport}><FileJson className="h-5 w-5" /></Button>
+              </TooltipTrigger>
+              <TooltipContent>Export Annotations</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+              <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={onClose}><X className="h-5 w-5" /></Button>
+              </TooltipTrigger>
+              <TooltipContent>Close Document</TooltipContent>
+          </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
 
   return (
-    <div className="h-[calc(100vh-12rem)] w-full">
-      <Worker workerUrl={workerUrl}>
-        <Viewer
-          fileUrl={pdf.url}
-          plugins={[layoutPlugin, highlightPluginInstance]}
-          initialAnnotations={annotations}
-          onAnnotationAdd={handleAnnotationAdd}
-          onAnnotationRemove={handleAnnotationRemove}
-          onAnnotationUpdate={handleAnnotationUpdate}
-        />
-      </Worker>
+    <div className="h-[calc(100vh-12rem)] w-full relative border rounded-lg overflow-hidden">
+        <AnnotationToolbar />
+        <Worker workerUrl={workerUrl}>
+            <Viewer
+            fileUrl={pdf.url}
+            plugins={[layoutPlugin, highlightPluginInstance]}
+            />
+        </Worker>
     </div>
   );
 };
