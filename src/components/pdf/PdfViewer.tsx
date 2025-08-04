@@ -11,6 +11,8 @@ import type { ToolbarProps, TransformToolbarSlot } from '@react-pdf-viewer/defau
 import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
 import type { RenderHighlightsProps } from '@react-pdf-viewer/highlight';
 
+import { pdfjs } from 'pdfjs-dist';
+
 interface PdfViewerProps {
   pdf: PdfDocument;
   onClose: () => void;
@@ -106,6 +108,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
     transformToolbar: transform,
   });
 
+  const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+
   return (
     <div className="h-[calc(100vh-12rem)] w-full"
       onMouseUp={(e) => {
@@ -122,25 +126,39 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
           return;
         }
 
+        // This is a simplified example. In a real-world scenario, you'd need a more robust way
+        // to determine the page index based on the selection.
+        // For now, we'll assume page 0.
+        const currentPage = 0; 
+        
+        const highlightAreas = Array.from(Array(selection.rangeCount).keys()).map(i => {
+            const r = selection.getRangeAt(i);
+            const rect = r.getBoundingClientRect();
+            return {
+                height: rect.height,
+                width: rect.width,
+                left: rect.left,
+                top: rect.top,
+                pageIndex: currentPage,
+            };
+        });
+
         addHighlight({
-            highlightAreas: [{
-                height: range.getBoundingClientRect().height,
-                width: range.getBoundingClientRect().width,
-                left: range.getBoundingClientRect().left,
-                top: range.getBoundingClientRect().top,
-                pageIndex: 0 // Placeholder, this needs proper calculation based on viewer API
-            }],
+            highlightAreas
         });
         
         selection.removeAllRanges();
       }}
     >
-      <Worker workerUrl="/pdf.worker.min.js">
+      <Worker workerUrl={workerUrl}>
         <Viewer
           fileUrl={pdf.url}
           plugins={[layoutPlugin, highlightPluginInstance]}
           initialAnnotations={pdf.annotations}
           onAnnotationAdd={(annotation) => {
+            if (!Array.isArray(pdf.annotations)) {
+                pdf.annotations = [];
+            }
             (pdf.annotations as Annotation[]).push({ ...annotation, id: `${++annotationIdCounter}` });
           }}
           onAnnotationRemove={(annotationId) => {

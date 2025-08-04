@@ -12,8 +12,6 @@ import PdfViewer from '@/components/pdf/PdfViewer';
 import { Loader2, FileText, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-import { pdfjs } from 'pdfjs-dist';
-
 // Required for react-pdf-viewer
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
@@ -21,11 +19,6 @@ import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 declare const __app_id: string;
 
 const App: FC = () => {
-  // Set worker source only on the client
-  if (typeof window !== 'undefined') {
-    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
-  }
-  
   const { user, loading: authLoading } = useAuth();
   const [pdfs, setPdfs] = React.useState<PdfDocument[]>([]);
   const [selectedPdf, setSelectedPdf] = React.useState<PdfDocument | null>(null);
