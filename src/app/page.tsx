@@ -12,6 +12,8 @@ import PdfList from '@/components/pdf/PdfList';
 import PdfViewer from '@/components/pdf/PdfViewer';
 import { Loader2, FileText, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Toaster } from "@/components/ui/toaster";
+
 
 // Required for react-pdf-viewer
 import '@react-pdf-viewer/core/lib/styles/index.css';
@@ -53,7 +55,11 @@ const App: FC = () => {
 
         if (selectedPdf) {
           const updatedSelectedPdf = userPdfs.find(p => p.id === selectedPdf.id);
-          setSelectedPdf(updatedSelectedPdf || null);
+          if (updatedSelectedPdf) {
+             setSelectedPdf(updatedSelectedPdf);
+          } else {
+             setSelectedPdf(null); // The selected PDF was deleted
+          }
         }
         setLoadingPdfs(false);
       }, (error) => {
@@ -69,22 +75,28 @@ const App: FC = () => {
     }
   }, [user, authLoading, appId, selectedPdf?.id]);
 
+
+  const handlePdfUpdate = (updatedPdf: PdfDocument) => {
+    setPdfs(prevPdfs => prevPdfs.map(p => p.id === updatedPdf.id ? updatedPdf : p));
+    setSelectedPdf(updatedPdf);
+  };
+
   if (authLoading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      <div className="flex h-screen w-full items-center justify-center bg-gray-100">
+        <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex h-screen w-full flex-col items-center justify-center bg-background">
-        <FileText className="h-16 w-16 text-primary" />
-        <h1 className="mt-4 text-2xl font-bold">PDF Annotator Pro</h1>
-        <p className="mt-2 text-muted-foreground">Please sign in to manage your documents.</p>
-        <Button onClick={signIn} className="mt-6">
-          <LogIn className="mr-2 h-4 w-4" />
+      <div className="flex h-screen w-full flex-col items-center justify-center bg-gray-50">
+        <FileText className="h-16 w-16 text-blue-600" />
+        <h1 className="mt-4 text-3xl font-bold tracking-tight">PDF Annotator Pro</h1>
+        <p className="mt-2 text-lg text-gray-500">Please sign in to manage your documents.</p>
+        <Button onClick={signIn} className="mt-8 rounded-full bg-blue-600 px-8 py-3 text-lg text-white hover:bg-blue-700">
+          <LogIn className="mr-2 h-5 w-5" />
           Sign In Anonymously
         </Button>
       </div>
@@ -92,52 +104,49 @@ const App: FC = () => {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
-      <header className="flex-shrink-0 border-b border-border bg-card">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-bold">PDF Annotator Pro</h1>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">User ID:</span> {user.uid}
-          </div>
-        </div>
-      </header>
-
-      <main className="container mx-auto flex-grow p-4 md:p-6">
-        <div className="grid h-full grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="lg:col-span-4 xl:col-span-3">
-            <div className="flex h-full flex-col space-y-6">
-              <PdfUploader userId={user.uid} appId={appId} />
-              <PdfList
-                pdfs={pdfs}
-                selectedPdfId={selectedPdf?.id}
-                onPdfSelect={setSelectedPdf}
-                loading={loadingPdfs}
-                userId={user.uid}
-                appId={appId}
-              />
-            </div>
-          </div>
-
-          <div className="lg:col-span-8 xl:col-span-9">
-            {selectedPdf ? (
-              <PdfViewer pdf={selectedPdf} onClose={() => setSelectedPdf(null)} userId={user.uid} appId={appId} />
-            ) : (
-              <div className="flex h-full items-center justify-center rounded-lg border-2 border-dashed bg-card">
-                <div className="text-center">
-                  <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
-                  <h3 className="mt-4 text-lg font-medium">No PDF Selected</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Upload or select a PDF from the list to start annotating.
-                  </p>
-                </div>
+    <div className="flex h-screen flex-col bg-gray-100 text-gray-900">
+      {selectedPdf ? (
+        <PdfViewer 
+          key={selectedPdf.id} 
+          pdf={selectedPdf} 
+          onClose={() => setSelectedPdf(null)} 
+          userId={user.uid} 
+          appId={appId} 
+          onPdfUpdate={handlePdfUpdate}
+        />
+      ) : (
+        <>
+          <header className="flex-shrink-0 border-b border-gray-200 bg-white">
+            <div className="container mx-auto flex h-16 items-center justify-between px-4">
+              <div className="flex items-center gap-3">
+                <FileText className="h-8 w-8 text-blue-600" />
+                <h1 className="text-2xl font-bold tracking-tight">PDF Annotator Pro</h1>
               </div>
-            )}
-          </div>
-        </div>
-      </main>
+              <div className="text-sm text-gray-500">
+                <span className="font-semibold text-gray-800">User:</span> {user.uid.substring(0, 12)}...
+              </div>
+            </div>
+          </header>
+
+          <main className="container mx-auto flex-grow p-4 md:p-8">
+             <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
+                <div className="md:col-span-4 lg:col-span-3">
+                    <PdfUploader userId={user.uid} appId={appId} />
+                </div>
+                <div className="md:col-span-8 lg:col-span-9">
+                    <PdfList
+                        pdfs={pdfs}
+                        onPdfSelect={setSelectedPdf}
+                        loading={loadingPdfs}
+                        userId={user.uid}
+                        appId={appId}
+                    />
+                </div>
+             </div>
+          </main>
+        </>
+      )}
+      <Toaster />
     </div>
   );
 };

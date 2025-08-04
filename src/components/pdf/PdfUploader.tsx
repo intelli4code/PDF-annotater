@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useRef } from 'react';
@@ -6,7 +7,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { UploadCloud, Loader2, AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -80,7 +81,7 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({ userId, appId }) => {
         name: selectedFile.name,
         storagePath: storagePath,
         url: publicUrlData.publicUrl,
-        annotations: {},
+        annotations: [],
         createdAt: serverTimestamp(),
       });
 
@@ -111,16 +112,16 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({ userId, appId }) => {
         <CardHeader>
             <CardTitle className="flex items-center gap-2">
             <UploadCloud className="h-5 w-5" />
-            Upload New PDF
+            Upload PDF
             </CardTitle>
+            <CardDescription>Upload a new document to start annotating.</CardDescription>
         </CardHeader>
         <CardContent>
             <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Supabase Not Configured</AlertTitle>
                 <AlertDescription>
-                Please set your Supabase URL and anonymous key in{' '}
-                <code>src/lib/supabase.ts</code> to enable file uploads.
+                Set your Supabase keys in <code>src/lib/supabase.ts</code> to enable uploads.
                 </AlertDescription>
             </Alert>
         </CardContent>
@@ -133,8 +134,9 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({ userId, appId }) => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <UploadCloud className="h-5 w-5" />
-          Upload New PDF
+          Upload PDF
         </CardTitle>
+        <CardDescription>Upload a new document to start annotating.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Input
@@ -143,14 +145,15 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({ userId, appId }) => {
           accept="application/pdf"
           onChange={handleFileChange}
           disabled={isUploading}
+          className="file:text-blue-600 file:font-semibold"
         />
-        <Button onClick={handleUpload} disabled={isUploading || !selectedFile} className="w-full">
+        <Button onClick={handleUpload} disabled={isUploading || !selectedFile} className="w-full bg-blue-600 text-white hover:bg-blue-700">
           {isUploading ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
             <UploadCloud className="mr-2 h-4 w-4" />
           )}
-          {isUploading ? 'Uploading...' : 'Upload'}
+          {isUploading ? 'Uploading...' : 'Upload Document'}
         </Button>
       </CardContent>
     </Card>

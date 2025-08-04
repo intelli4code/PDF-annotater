@@ -1,9 +1,10 @@
+
 'use client';
 
 import React from 'react';
 import type { PdfDocument } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trash2, FileText, List } from 'lucide-react';
@@ -26,14 +27,13 @@ import { supabase } from '@/lib/supabase';
 
 interface PdfListProps {
   pdfs: PdfDocument[];
-  selectedPdfId?: string;
   onPdfSelect: (pdf: PdfDocument) => void;
   loading: boolean;
   userId: string;
   appId: string;
 }
 
-const PdfList: React.FC<PdfListProps> = ({ pdfs, selectedPdfId, onPdfSelect, loading, userId, appId }) => {
+const PdfList: React.FC<PdfListProps> = ({ pdfs, onPdfSelect, loading, userId, appId }) => {
   const { toast } = useToast();
 
   const handleDelete = async (pdf: PdfDocument) => {
@@ -75,37 +75,43 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, selectedPdfId, onPdfSelect, loa
   };
 
   return (
-    <Card className="flex-grow flex flex-col">
+    <Card className="flex-grow flex flex-col h-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <List className="h-5 w-5" />
           My Documents
         </CardTitle>
+        <CardDescription>Select a document to view and edit.</CardDescription>
       </CardHeader>
-      <CardContent className="flex-grow">
-        <ScrollArea className="h-full">
+      <CardContent className="flex-grow p-4">
+        <ScrollArea className="h-[calc(100vh-22rem)]">
           {loading ? (
-            <div className="space-y-2 pr-4">
+            <div className="space-y-3 pr-4">
               {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
               ))}
             </div>
           ) : pdfs.length > 0 ? (
-            <div className="space-y-2 pr-4">
+            <div className="space-y-3 pr-4">
               {pdfs.map(pdf => (
                 <div key={pdf.id} className="group flex items-center gap-2">
                   <Button
-                    variant={selectedPdfId === pdf.id ? 'default' : 'ghost'}
-                    className="w-full justify-start truncate"
+                    variant='outline'
+                    className="w-full justify-start truncate p-3 h-auto text-left flex flex-col items-start"
                     onClick={() => onPdfSelect(pdf)}
                   >
-                    <FileText className="mr-2 h-4 w-4 flex-shrink-0" />
-                    <span className="truncate">{pdf.name}</span>
+                    <span className="font-semibold text-blue-700 flex items-center gap-2">
+                        <FileText className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{pdf.name}</span>
+                    </span>
+                    <span className="text-xs text-gray-500 mt-1">
+                        {pdf.createdAt ? new Date(pdf.createdAt.toString()).toLocaleDateString() : 'Date unknown'}
+                    </span>
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0 opacity-0 group-hover:opacity-100" disabled={!supabase}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                      <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" disabled={!supabase}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
@@ -118,7 +124,7 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, selectedPdfId, onPdfSelect, loa
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction onClick={() => handleDelete(pdf)} className={cn(
-                          "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          "bg-red-600 text-white hover:bg-red-700"
                         )}>Delete</AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -127,7 +133,13 @@ const PdfList: React.FC<PdfListProps> = ({ pdfs, selectedPdfId, onPdfSelect, loa
               ))}
             </div>
           ) : (
-            <p className="text-center text-sm text-muted-foreground pt-10">No documents uploaded yet.</p>
+            <div className="text-center text-gray-500 pt-10">
+                <FileText className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-4 text-lg font-medium">No Documents Found</h3>
+                <p className="mt-1 text-sm">
+                    Upload your first PDF to get started.
+                </p>
+            </div>
           )}
         </ScrollArea>
       </CardContent>

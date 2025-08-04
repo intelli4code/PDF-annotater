@@ -15,7 +15,7 @@ import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@rea
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Highlighter, Edit, Eraser, Download, FileJson, Save, X, Bot, MessageSquare, Loader2 } from 'lucide-react';
+import { Highlighter, Edit, Eraser, Download, FileJson, Save, Bot, MessageSquare, Loader2, XCircle } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -26,7 +26,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Textarea } from '@/components/ui/textarea';
 import CommentsSidebar from './CommentsSidebar';
 
-
 type AnnotationType = 'highlight' | 'marker' | 'eraser';
 
 interface PdfViewerProps {
@@ -34,6 +33,7 @@ interface PdfViewerProps {
   onClose: () => void;
   userId: string;
   appId: string;
+  onPdfUpdate: (pdf: PdfDocument) => void;
 }
 
 const getAnnotationsArray = (annotations: any): Annotation[] => {
@@ -42,51 +42,43 @@ const getAnnotationsArray = (annotations: any): Annotation[] => {
     }
     if (annotations && typeof annotations === 'object') {
         const annArray = Object.values(annotations).filter((a: any) => a && a.highlightAreas);
-        return annArray;
+        return annArray as Annotation[];
     }
     return [];
 };
 
-
-const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) => {
-  const [annotations, setAnnotations] = React.useState<Annotation[]>(getAnnotationsArray(pdf.annotations));
-  const [annotationType, setAnnotationType] = React.useState<AnnotationType>('highlight');
+const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPdfUpdate }) => {
+  const [annotations, setAnnotations] = useState<Annotation[]>(() => getAnnotationsArray(pdf.annotations));
+  const [annotationType, setAnnotationType] = useState<AnnotationType>('highlight');
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const { toast } = useToast();
-
-  useEffect(() => {
-    setAnnotations(getAnnotationsArray(pdf.annotations));
-  }, [pdf]);
-
-  const saveAnnotations = async (newAnnotations: Annotation[]) => {
+  
+  const saveAnnotations = useCallback(async (newAnnotations: Annotation[]) => {
     try {
       const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
-      // Firestore works better with object maps if you're using IDs as keys.
-      // But we will save as an array to be consistent.
       await updateDoc(doc(db, pdfDocPath), {
         annotations: newAnnotations,
       });
-      // Don't toast on auto-save, it's too noisy.
+      // Do not toast on auto-save
     } catch (e: any) {
-      console.error(e);
+      console.error("Save failed:", e);
       toast({
         variant: "destructive",
         title: "Save Failed",
         description: e.message || 'An unexpected error occurred while saving annotations.',
       });
     }
-  };
+  }, [appId, userId, pdf.id, toast]);
   
-  const handleSave = () => {
+  const handleManualSave = () => {
     saveAnnotations(annotations);
      toast({
       title: "Annotations Saved",
       description: "Your annotations have been successfully saved.",
     });
   };
-
 
   const handleDownload = async () => {
     if (!supabase) {
@@ -135,79 +127,87 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
       }
   };
 
-  const addAnnotation = (highlightArea: HighlightArea, type: AnnotationType) => {
+  const addAnnotation = (area: HighlightArea, type: AnnotationType) => {
     if (type === 'eraser') return;
     const newAnnotation: Annotation = {
         id: `${Date.now()}`,
-        highlightAreas: [highlightArea],
+        highlightAreas: [area],
         type: type,
         comment: '',
-        pageIndex: highlightArea.pageIndex,
+        pageIndex: area.pageIndex,
         content: {
-            text: highlightArea.content.text || '',
-            image: highlightArea.content.image || '',
+            text: area.content.text || '',
+            image: area.content.image || '',
         },
     };
-    setAnnotations(prev => {
-        const updatedAnnotations = [...prev, newAnnotation];
-        saveAnnotations(updatedAnnotations); // Auto-save on change
-        return updatedAnnotations;
+    
+    setAnnotations(prevAnns => {
+      const updatedAnnotations = [...prevAnns, newAnnotation];
+      saveAnnotations(updatedAnnotations);
+      onPdfUpdate({ ...pdf, annotations: updatedAnnotations });
+      return updatedAnnotations;
     });
   };
 
   const updateAnnotationComment = (id: string, comment: string) => {
-    setAnnotations(prev => {
-        const updatedAnnotations = prev.map(ann => ann.id === id ? { ...ann, comment } : ann);
-        saveAnnotations(updatedAnnotations); // Auto-save on change
+    setAnnotations(prevAnns => {
+        const updatedAnnotations = prevAnns.map(ann => ann.id === id ? { ...ann, comment } : ann);
+        saveAnnotations(updatedAnnotations);
+        onPdfUpdate({ ...pdf, annotations: updatedAnnotations });
         return updatedAnnotations;
     });
-  }
+  };
+  
+  const removeAnnotation = (id: string) => {
+    setAnnotations(prevAnns => {
+        const updatedAnnotations = prevAnns.filter(ann => ann.id !== id);
+        saveAnnotations(updatedAnnotations);
+        onPdfUpdate({ ...pdf, annotations: updatedAnnotations });
+        return updatedAnnotations;
+    });
+  };
 
   const renderHighlights = (props: RenderHighlightsProps) => (
     <div>
       {annotations
         .filter(ann => ann.pageIndex === props.pageIndex)
-        .map((ann, index) => (
-          <React.Fragment key={ann.id}>
-            <Popover>
-              <PopoverTrigger asChild>
-                <div
-                    style={Object.assign(
-                    {},
-                    {
-                        background: ann.type === 'highlight' ? 'yellow' : 'red',
-                        opacity: 0.4,
-                    },
-                    props.getCssProperties(ann.highlightAreas[0], props.rotation)
-                    )}
-                    onClick={() => {
-                        if (annotationType === 'eraser') {
-                           setAnnotations(prev => {
-                                const updated = prev.filter(a => a.id !== ann.id);
-                                saveAnnotations(updated);
-                                return updated;
-                            });
-                        }
-                    }}
-                />
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <div className="grid gap-4">
-                  <div className="space-y-2">
-                    <h4 className="font-medium leading-none">Comment</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Add a comment to this annotation.
-                    </p>
+        .map((ann) => (
+          <Popover key={ann.id}>
+            <PopoverTrigger asChild>
+              <div
+                style={Object.assign(
+                  {},
+                  {
+                      background: ann.type === 'highlight' ? 'yellow' : 'red',
+                      opacity: 0.4,
+                  },
+                  props.getCssProperties(ann.highlightAreas[0], props.rotation)
+                )}
+                onClick={() => {
+                    if (annotationType === 'eraser') {
+                      removeAnnotation(ann.id);
+                    }
+                }}
+              />
+            </PopoverTrigger>
+             {annotationType !== 'eraser' && (
+                <PopoverContent className="w-80">
+                  <div className="grid gap-4">
+                    <div className="space-y-2">
+                      <h4 className="font-medium leading-none">Comment</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Add a comment to this annotation.
+                      </p>
+                    </div>
+                    <Textarea 
+                      defaultValue={ann.comment}
+                      onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
+                      placeholder="Type your comment here."
+                    />
                   </div>
-                  <Textarea 
-                    defaultValue={ann.comment}
-                    onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
-                    placeholder="Type your comment here."
-                  />
-                </div>
-              </PopoverContent>
-            </Popover>
-          </React.Fragment>
+                </PopoverContent>
+              )}
+          </Popover>
         ))}
     </div>
   );
@@ -247,22 +247,25 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
     renderHighlights,
     trigger: Trigger.TextSelection,
     onHighlight: (areas) => {
-        if (annotationType !== 'eraser') {
-            addAnnotation(areas[0], annotationType);
-        }
+      addAnnotation(areas[0], annotationType);
     },
-    selectionHandler: handleSummarizeSelection,
   });
+
+  const { getSelection } = highlightPluginInstance;
 
 
   const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
       ...slot,
-      // Hide the default annotation tools
-      Open: () => <></>,
+      // Hide all default toolbar elements
       Download: () => <></>,
       SwitchTheme: () => <></>,
       EnterFullScreen: () => <></>,
       Print: () => <></>,
+      Open: () => <></>,
+      Rotate: () => <></>,
+      Zoom: () => <></>,
+      ZoomIn: () => <></>,
+      ZoomOut: () => <></>,
   });
   
   const layoutPlugin = defaultLayoutPlugin({
@@ -273,96 +276,98 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
   
   const AnnotationToolbar = () => (
-    <div className="absolute top-2 right-2 z-10 bg-card p-2 rounded-lg shadow-md border flex gap-1">
-      <TooltipProvider>
-          <Tooltip>
-              <TooltipTrigger asChild>
-                  <Button variant={annotationType === 'highlight' ? 'default' : 'ghost'} size="icon" onClick={() => setAnnotationType('highlight')}>
-                      <Highlighter className="h-5 w-5" />
-                  </Button>
-              </TooltipTrigger>
-              <TooltipContent>Highlight (Yellow)</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-              <TooltipTrigger asChild>
-                  <Button variant={annotationType === 'marker' ? 'default' : 'ghost'} size="icon" onClick={() => setAnnotationType('marker')}>
-                      <Edit className="h-5 w-5" />
-                  </Button>
-              </TooltipTrigger>
-              <TooltipContent>Marker (Red)</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-              <TooltipTrigger asChild>
-                  <Button variant={annotationType === 'eraser' ? 'default' : 'ghost'} size="icon" onClick={() => setAnnotationType('eraser')}>
-                      <Eraser className="h-5 w-5" />
-                  </Button>
-              </TooltipTrigger>
-              <TooltipContent>Eraser</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => highlightPluginInstance.getSelection()?.(handleSummarizeSelection)}
-                disabled={isSummarizing}
-              >
-                {isSummarizing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Bot className="h-5 w-5" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Summarize Selection (AI)</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-              <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={handleSave}><Save className="h-5 w-5" /></Button>
-              </TooltipTrigger>
-              <TooltipContent>Save Annotations</TooltipContent>
-          </Tooltip>
-           <Tooltip>
-              <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)}><MessageSquare className="h-5 w-5" /></Button>
-              </TooltipTrigger>
-              <TooltipContent>Show Comments</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-              <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={handleDownload}><Download className="h-5 w-5" /></Button>
-              </TooltipTrigger>
-              <TooltipContent>Download PDF</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-              <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={handleExport}><FileJson className="h-5 w-5" /></Button>
-              </TooltipTrigger>
-              <TooltipContent>Export Annotations</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-              <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={onClose}><X className="h-5 w-5" /></Button>
-              </TooltipTrigger>
-              <TooltipContent>Close Document</TooltipContent>
-          </Tooltip>
-      </TooltipProvider>
+    <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between w-full">
+        <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold truncate max-w-xs">{pdf.name}</h2>
+        </div>
+        <div className="flex items-center gap-2">
+            <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button variant={annotationType === 'highlight' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationType('highlight')}>
+                            <Highlighter className="h-5 w-5" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Highlight (Yellow)</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button variant={annotationType === 'marker' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationType('marker')}>
+                            <Edit className="h-5 w-5" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Marker (Red)</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button variant={annotationType === 'eraser' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationType('eraser')}>
+                            <Eraser className="h-5 w-5" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Eraser</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={() => getSelection()?.(handleSummarizeSelection)} disabled={isSummarizing}>
+                            {isSummarizing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Bot className="h-5 w-5" />}
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Summarize Selection (AI)</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={handleManualSave}><Save className="h-5 w-5" /></Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Save Annotations</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)}><MessageSquare className="h-5 w-5" /></Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Show Comments</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={handleDownload}><Download className="h-5 w-5" /></Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Download PDF</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={handleExport}><FileJson className="h-5 w-5" /></Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Export Annotations</TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
+        </div>
+        <div>
+            <Button onClick={onClose} variant="destructive" className="rounded-full">
+                <XCircle className="mr-2 h-5 w-5" />
+                DONE
+            </Button>
+        </div>
     </div>
   );
 
   return (
-    <div className="flex h-full w-full">
-        <div className="flex-grow h-full w-full relative border rounded-lg overflow-hidden">
-            <AnnotationToolbar />
-            <Worker workerUrl={workerUrl}>
-                <Viewer
-                fileUrl={pdf.url}
-                plugins={[layoutPlugin, highlightPluginInstance]}
-                />
-            </Worker>
+    <div className="flex h-screen w-full flex-col">
+        <AnnotationToolbar />
+        <div className="flex-grow flex h-full w-full">
+            <div className="flex-grow h-full w-full relative bg-gray-200">
+                <Worker workerUrl={workerUrl}>
+                    <Viewer
+                    fileUrl={pdf.url}
+                    plugins={[layoutPlugin, highlightPluginInstance]}
+                    />
+                </Worker>
+            </div>
+            <CommentsSidebar 
+                isOpen={isSidebarOpen} 
+                onClose={() => setIsSidebarOpen(false)}
+                annotations={annotations}
+                onUpdateComment={updateAnnotationComment}
+            />
         </div>
-        <CommentsSidebar 
-            isOpen={isSidebarOpen} 
-            onClose={() => setIsSidebarOpen(false)}
-            annotations={annotations}
-            onUpdateComment={updateAnnotationComment}
-        />
     </div>
   );
 };
