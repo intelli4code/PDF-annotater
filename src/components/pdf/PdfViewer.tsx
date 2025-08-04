@@ -10,8 +10,8 @@ import { summarizeText } from '@/ai/flows/summarize-text-flow';
 
 import { Viewer, Worker } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot } from '@react-pdf-viewer/default-layout';
-import { highlightPlugin, Trigger, MessageIcon } from '@react-pdf-viewer/highlight';
-import type { RenderHighlightsProps, HighlightArea, Message, HighlightTarget } from '@react-pdf-viewer/highlight';
+import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
+import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
