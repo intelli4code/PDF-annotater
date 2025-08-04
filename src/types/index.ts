@@ -1,16 +1,25 @@
 import type { Timestamp } from "firebase/firestore";
 import type { HighlightArea } from "@react-pdf-viewer/highlight";
+import type { DrawingPath } from "@react-pdf-viewer/drawing";
 
 export interface Annotation {
   id: string;
-  type: 'highlight' | 'marker';
+  type: 'highlight' | 'draw';
   pageIndex: number;
-  highlightAreas: HighlightArea[];
   comment: string;
-  content: {
+  
+  // Highlight-specific
+  highlightAreas?: HighlightArea[];
+  content?: {
       text?: string;
       image?: string;
   };
+
+  // Drawing-specific
+  paths?: DrawingPath[];
+  color?: string;
+  opacity?: number;
+  width?: number;
 }
 
 export interface PdfDocument {

@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { PdfDocument, Annotation } from '@/types';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
@@ -9,13 +9,13 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { summarizeText } from '@/ai/flows/summarize-text-flow';
 
 import { Viewer, Worker } from '@react-pdf-viewer/core';
-import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot } from '@react-pdf-viewer/default-layout';
-import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
+import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot, highlightPlugin, Trigger, drawingPlugin, DrawingMode } from '@react-pdf-viewer/default-layout';
 import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
+import type { RenderDrawingProps } from '@react-pdf-viewer/drawing';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Highlighter, Edit, Eraser, Download, FileJson, Save, Bot, MessageSquare, Loader2, XCircle } from 'lucide-react';
+import { Highlighter, Edit, Eraser, Download, FileJson, Save, Bot, MessageSquare, Loader2, XCircle, ChevronDown } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -25,8 +25,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
 import CommentsSidebar from './CommentsSidebar';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
-type AnnotationType = 'highlight' | 'marker' | 'eraser';
+type AnnotationMode = 'highlight' | 'draw' | 'erase';
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -38,10 +39,10 @@ interface PdfViewerProps {
 
 const getAnnotationsArray = (annotations: any): Annotation[] => {
     if (Array.isArray(annotations)) {
-        return annotations.filter(a => a && a.highlightAreas);
+        return annotations.filter(a => a && (a.highlightAreas || a.paths));
     }
     if (annotations && typeof annotations === 'object') {
-        const annArray = Object.values(annotations).filter((a: any) => a && a.highlightAreas);
+        const annArray = Object.values(annotations).filter((a: any) => a && (a.highlightAreas || a.paths));
         return annArray as Annotation[];
     }
     return [];
@@ -49,17 +50,25 @@ const getAnnotationsArray = (annotations: any): Annotation[] => {
 
 const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPdfUpdate }) => {
   const [annotations, setAnnotations] = useState<Annotation[]>(() => getAnnotationsArray(pdf.annotations));
-  const [annotationType, setAnnotationType] = useState<AnnotationType>('highlight');
+  const [annotationMode, setAnnotationMode] = useState<AnnotationMode>('highlight');
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  // Drawing state
+  const [drawColor, setDrawColor] = useState('rgba(255, 0, 0, 0.5)');
+  const [drawOpacity, setDrawOpacity] = useState(0.5);
+  const [drawWidth, setDrawWidth] = useState(5);
+
 
   const { toast } = useToast();
   
   const saveAnnotations = useCallback(async (newAnnotations: Annotation[]) => {
     try {
       const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
+      // Convert to a plain object for Firestore
+      const annotationsToSave = newAnnotations.map(ann => ({...ann}));
       await updateDoc(doc(db, pdfDocPath), {
-        annotations: newAnnotations,
+        annotations: annotationsToSave,
       });
       // Do not toast on auto-save
     } catch (e: any) {
@@ -127,22 +136,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
       }
   };
 
-  const addAnnotation = (area: HighlightArea, type: AnnotationType) => {
-    if (type === 'eraser') return;
-    const newAnnotation: Annotation = {
-        id: `${Date.now()}`,
-        highlightAreas: [area],
-        type: type,
-        comment: '',
-        pageIndex: area.pageIndex,
-        content: {
-            text: area.content.text || '',
-            image: area.content.image || '',
-        },
-    };
-    
+  const addAnnotation = (annotation: Annotation) => {
     setAnnotations(prevAnns => {
-      const updatedAnnotations = [...prevAnns, newAnnotation];
+      const updatedAnnotations = [...prevAnns, annotation];
       saveAnnotations(updatedAnnotations);
       onPdfUpdate({ ...pdf, annotations: updatedAnnotations });
       return updatedAnnotations;
@@ -170,47 +166,50 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   const renderHighlights = (props: RenderHighlightsProps) => (
     <div>
       {annotations
-        .filter(ann => ann.pageIndex === props.pageIndex)
-        .map((ann) => (
-          <Popover key={ann.id}>
-            <PopoverTrigger asChild>
-              <div
-                style={Object.assign(
-                  {},
-                  {
-                      background: ann.type === 'highlight' ? 'yellow' : 'red',
-                      opacity: 0.4,
-                  },
-                  props.getCssProperties(ann.highlightAreas[0], props.rotation)
-                )}
-                onClick={() => {
-                    if (annotationType === 'eraser') {
-                      removeAnnotation(ann.id);
-                    }
-                }}
-              />
-            </PopoverTrigger>
-             {annotationType !== 'eraser' && (
-                <PopoverContent className="w-80">
-                  <div className="grid gap-4">
-                    <div className="space-y-2">
-                      <h4 className="font-medium leading-none">Comment</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Add a comment to this annotation.
-                      </p>
-                    </div>
-                    <Textarea 
-                      defaultValue={ann.comment}
-                      onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
-                      placeholder="Type your comment here."
-                    />
-                  </div>
-                </PopoverContent>
-              )}
-          </Popover>
-        ))}
+        .filter(ann => ann.type === 'highlight' && ann.pageIndex === props.pageIndex && ann.highlightAreas)
+        .flatMap(ann => 
+            ann.highlightAreas!.map((area, index) => (
+                <Popover key={`${ann.id}-${index}`}>
+                    <PopoverTrigger asChild>
+                        <div
+                            style={Object.assign(
+                                {},
+                                {
+                                    background: 'yellow',
+                                    opacity: 0.4,
+                                },
+                                props.getCssProperties(area, props.rotation)
+                            )}
+                            onClick={() => {
+                                if (annotationMode === 'erase') {
+                                    removeAnnotation(ann.id);
+                                }
+                            }}
+                        />
+                    </PopoverTrigger>
+                    {annotationMode !== 'erase' && (
+                        <PopoverContent className="w-80">
+                            <div className="grid gap-4">
+                                <div className="space-y-2">
+                                    <h4 className="font-medium leading-none">Comment</h4>
+                                    <p className="text-sm text-muted-foreground">
+                                        Add a comment to this annotation.
+                                    </p>
+                                </div>
+                                <Textarea 
+                                    defaultValue={ann.comment}
+                                    onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
+                                    placeholder="Type your comment here."
+                                />
+                            </div>
+                        </PopoverContent>
+                    )}
+                </Popover>
+            ))
+        )}
     </div>
-  );
+);
+
 
   const handleSummarizeSelection = useCallback(
     (selection: HighlightTarget) => {
@@ -234,7 +233,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
         })
         .finally(() => {
           setIsSummarizing(false);
-          // Clear text selection after summarizing
           if (window.getSelection) {
             window.getSelection()?.removeAllRanges();
           }
@@ -247,16 +245,98 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     renderHighlights,
     trigger: Trigger.TextSelection,
     onHighlight: (areas) => {
-      addAnnotation(areas[0], annotationType);
+      if (annotationMode !== 'highlight') return;
+      const newAnnotation: Annotation = {
+        id: `${Date.now()}`,
+        highlightAreas: areas,
+        type: 'highlight',
+        comment: '',
+        pageIndex: areas[0].pageIndex,
+        content: {
+            text: areas.map(a => a.content.text).join(' '),
+            image: '',
+        },
+      };
+      addAnnotation(newAnnotation);
     },
   });
 
   const { getSelection } = highlightPluginInstance;
 
+  const drawingPluginInstance = drawingPlugin({
+    mode: annotationMode === 'draw' ? DrawingMode.Freehand : (annotationMode === 'erase' ? DrawingMode.Eraser : DrawingMode.None),
+    callbacks: {
+        onDrawingAdd: (props) => {
+          const { pageIndex, drawing } = props;
+          const newAnnotation: Annotation = {
+            id: `${Date.now()}`,
+            type: 'draw',
+            pageIndex,
+            paths: drawing.paths,
+            comment: '',
+            color: drawing.color,
+            opacity: drawing.opacity,
+            width: drawing.width,
+          };
+          addAnnotation(newAnnotation);
+        },
+        onDrawingErase: (props) => {
+            const erasedAnnotationId = props.drawing.attributes?.annotationId;
+            if (erasedAnnotationId) {
+                removeAnnotation(erasedAnnotationId);
+            }
+        },
+    },
+    render: (props: RenderDrawingProps) => {
+        const { pageIndex, canvasLayerRef, canvasEleRef } = props;
+        const drawingAnnotations = annotations.filter(a => a.type === 'draw' && a.pageIndex === pageIndex);
+
+        useEffect(() => {
+            if (!canvasEleRef.current) return;
+            const canvas = canvasEleRef.current;
+            const context = canvas.getContext('2d');
+            if (!context) return;
+            context.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawingAnnotations.forEach(annotation => {
+                if (!annotation.paths) return;
+                context.beginPath();
+                context.strokeStyle = annotation.color || 'rgba(255, 0, 0, 0.5)';
+                context.lineWidth = annotation.width || 5;
+                context.globalAlpha = annotation.opacity || 0.5;
+
+                annotation.paths.forEach(path => {
+                    if (path.points.length > 0) {
+                        context.moveTo(path.points[0].x, path.points[0].y);
+                        path.points.slice(1).forEach(p => context.lineTo(p.x, p.y));
+                    }
+                });
+                context.stroke();
+            });
+        }, [drawingAnnotations, canvasEleRef, props.width, props.height]);
+
+        return <></>;
+    },
+  });
+
+  const { activateDrawingMode } = drawingPluginInstance;
+
+  useEffect(() => {
+    if (annotationMode === 'draw') {
+        activateDrawingMode(DrawingMode.Freehand, {
+            color: drawColor,
+            opacity: drawOpacity,
+            width: drawWidth,
+        });
+    } else if (annotationMode === 'erase') {
+        activateDrawingMode(DrawingMode.Eraser);
+    } else {
+        activateDrawingMode(DrawingMode.None);
+    }
+  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode]);
 
   const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
       ...slot,
-      // Hide all default toolbar elements
       Download: () => <></>,
       SwitchTheme: () => <></>,
       EnterFullScreen: () => <></>,
@@ -269,8 +349,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   });
   
   const layoutPlugin = defaultLayoutPlugin({
-    sidebarTabs: (defaultTabs) => [], // Hide sidebar
+    sidebarTabs: (defaultTabs) => [],
     transformToolbar: transform,
+    highlightPluginInstance,
+    drawingPluginInstance,
   });
 
   const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
@@ -284,23 +366,37 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
             <TooltipProvider>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button variant={annotationType === 'highlight' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationType('highlight')}>
+                        <Button variant={annotationMode === 'highlight' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationMode('highlight')}>
                             <Highlighter className="h-5 w-5" />
                         </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Highlight (Yellow)</TooltipContent>
+                    <TooltipContent>Highlight Text</TooltipContent>
                 </Tooltip>
-                <Tooltip>
+                
+                <DropdownMenu>
+                  <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button variant={annotationType === 'marker' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationType('marker')}>
-                            <Edit className="h-5 w-5" />
-                        </Button>
+                      <DropdownMenuTrigger asChild>
+                          <Button variant={annotationMode === 'draw' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationMode('draw')}>
+                              <Edit className="h-5 w-5" />
+                          </Button>
+                      </DropdownMenuTrigger>
                     </TooltipTrigger>
-                    <TooltipContent>Marker (Red)</TooltipContent>
-                </Tooltip>
+                    <TooltipContent>Draw</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onSelect={() => setDrawColor('rgba(255, 0, 0, 0.5)')}>Red</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setDrawColor('rgba(0, 0, 255, 0.5)')}>Blue</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setDrawColor('rgba(0, 255, 0, 0.5)')}>Green</DropdownMenuItem>
+                     <DropdownMenuItem onSelect={() => setDrawWidth(5)}>Small Brush</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setDrawWidth(10)}>Medium Brush</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setDrawWidth(15)}>Large Brush</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button variant={annotationType === 'eraser' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationType('eraser')}>
+                        <Button variant={annotationMode === 'erase' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationMode('erase')}>
                             <Eraser className="h-5 w-5" />
                         </Button>
                     </TooltipTrigger>
@@ -357,7 +453,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                 <Worker workerUrl={workerUrl}>
                     <Viewer
                     fileUrl={pdf.url}
-                    plugins={[layoutPlugin, highlightPluginInstance]}
+                    plugins={[layoutPlugin]}
                     />
                 </Worker>
             </div>
