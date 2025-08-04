@@ -21,6 +21,7 @@ import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 import '@react-pdf-viewer/highlight/lib/styles/index.css';
 
 
+
 declare const __app_id: string;
 
 const App: FC = () => {

@@ -9,11 +9,10 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { summarizeText } from '@/ai/flows/summarize-text-flow';
 
 import { Viewer, Worker } from '@react-pdf-viewer/core';
-import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot, drawingPlugin, DrawingMode } from '@react-pdf-viewer/default-layout';
+import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot, DrawingMode, RenderDrawingProps } from '@react-pdf-viewer/default-layout';
 import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
 import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
 
-import type { RenderDrawingProps } from '@react-pdf-viewer/drawing';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -244,6 +243,12 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     [toast]
   );
   
+  const defaultLayoutPluginInstance = defaultLayoutPlugin();
+  const {
+    activateDrawingMode,
+    drawingPluginInstance,
+  } = defaultLayoutPluginInstance;
+  
   const highlightPluginInstance = highlightPlugin({
     renderHighlights,
     trigger: Trigger.TextSelection,
@@ -266,63 +271,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
 
   const { getSelection } = highlightPluginInstance;
 
-  const drawingPluginInstance = drawingPlugin({
-    mode: annotationMode === 'draw' ? DrawingMode.Freehand : (annotationMode === 'erase' ? DrawingMode.Eraser : DrawingMode.None),
-    callbacks: {
-        onDrawingAdd: (props) => {
-          const { pageIndex, drawing } = props;
-          const newAnnotation: Annotation = {
-            id: `${Date.now()}`,
-            type: 'draw',
-            pageIndex,
-            paths: drawing.paths,
-            comment: '',
-            color: drawing.color,
-            opacity: drawing.opacity,
-            width: drawing.width,
-          };
-          addAnnotation(newAnnotation);
-        },
-        onDrawingErase: (props) => {
-            const erasedAnnotationId = props.drawing.attributes?.annotationId;
-            if (erasedAnnotationId) {
-                removeAnnotation(erasedAnnotationId as string);
-            }
-        },
-    },
-    render: (props: RenderDrawingProps) => {
-        const { pageIndex, canvasLayerRef, canvasEleRef } = props;
-        const drawingAnnotations = annotations.filter(a => a.type === 'draw' && a.pageIndex === pageIndex);
-
-        useEffect(() => {
-            if (!canvasEleRef.current) return;
-            const canvas = canvasEleRef.current;
-            const context = canvas.getContext('2d');
-            if (!context) return;
-            context.clearRect(0, 0, canvas.width, canvas.height);
-
-            drawingAnnotations.forEach(annotation => {
-                if (!annotation.paths) return;
-                context.beginPath();
-                context.strokeStyle = annotation.color || 'rgba(255, 0, 0, 0.5)';
-                context.lineWidth = annotation.width || 5;
-                context.globalAlpha = annotation.opacity || 0.5;
-
-                annotation.paths.forEach(path => {
-                    if (path.points.length > 0) {
-                        context.moveTo(path.points[0].x, path.points[0].y);
-                        path.points.slice(1).forEach(p => context.lineTo(p.x, p.y));
-                    }
-                });
-                context.stroke();
-            });
-        }, [drawingAnnotations, canvasEleRef, props.width, props.height]);
-
-        return <></>;
-    },
-  });
-
-  const { activateDrawingMode } = drawingPluginInstance;
 
   useEffect(() => {
     if (annotationMode === 'draw') {
