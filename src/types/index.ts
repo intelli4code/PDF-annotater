@@ -1,7 +1,17 @@
 import type { Timestamp } from "firebase/firestore";
+import type { HighlightArea } from "@react-pdf-viewer/highlight";
 
-// This is a generic type for annotations from react-pdf-viewer
-export type Annotation = any;
+export interface Annotation {
+  id: string;
+  type: 'highlight' | 'marker';
+  pageIndex: number;
+  highlightAreas: HighlightArea[];
+  comment: string;
+  content: {
+      text?: string;
+      image?: string;
+  };
+}
 
 export interface PdfDocument {
   id: string;

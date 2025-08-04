@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 // Required for react-pdf-viewer
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
+import '@react-pdf-viewer/highlight/lib/styles/index.css';
+
 
 declare const __app_id: string;
 
@@ -36,10 +38,7 @@ const App: FC = () => {
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const userPdfs = querySnapshot.docs.map(doc => {
             const data = doc.data();
-            // Ensure annotations are always an array
-            const annotations = Array.isArray(data.annotations) 
-              ? data.annotations 
-              : (data.annotations && typeof data.annotations === 'object' ? Object.values(data.annotations) : []);
+            const annotations = Array.isArray(data.annotations) ? data.annotations : [];
 
             return {
                 id: doc.id,

@@ -1,28 +1,33 @@
 
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { PdfDocument, Annotation } from '@/types';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { doc, updateDoc } from 'firebase/firestore';
+import { summarizeText } from '@/ai/flows/summarize-text-flow';
 
 import { Viewer, Worker } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin, ToolbarProps, TransformToolbarSlot } from '@react-pdf-viewer/default-layout';
-import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
-import type { RenderHighlightsProps, HighlightArea } from '@react-pdf-viewer/highlight';
+import { highlightPlugin, Trigger, MessageIcon } from '@react-pdf-viewer/highlight';
+import type { RenderHighlightsProps, HighlightArea, Message, HighlightTarget } from '@react-pdf-viewer/highlight';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Highlighter, Edit, Eraser, Download, FileJson, Save, X } from 'lucide-react';
+import { Highlighter, Edit, Eraser, Download, FileJson, Save, X, Bot, MessageSquare, Loader2 } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Textarea } from '@/components/ui/textarea';
+import CommentsSidebar from './CommentsSidebar';
 
-type AnnotationType = 'highlight' | 'marker';
+
+type AnnotationType = 'highlight' | 'marker' | 'eraser';
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -45,17 +50,20 @@ const getAnnotationsArray = (annotations: any): Annotation[] => {
 const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) => {
   const [annotations, setAnnotations] = React.useState<Annotation[]>(getAnnotationsArray(pdf.annotations));
   const [annotationType, setAnnotationType] = React.useState<AnnotationType>('highlight');
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   const { toast } = useToast();
 
-  React.useEffect(() => {
+  useEffect(() => {
     setAnnotations(getAnnotationsArray(pdf.annotations));
   }, [pdf]);
 
-  const saveAnnotations = async () => {
+  const saveAnnotations = async (newAnnotations: Annotation[]) => {
     try {
       const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
       await updateDoc(doc(db, pdfDocPath), {
-        annotations: annotations,
+        annotations: newAnnotations,
       });
       toast({
         title: "Annotations Saved",
@@ -70,6 +78,11 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
       });
     }
   };
+  
+  const handleSave = () => {
+    saveAnnotations(annotations);
+  };
+
 
   const handleDownload = async () => {
     if (!supabase) {
@@ -119,40 +132,110 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   };
 
   const addAnnotation = (highlightArea: HighlightArea, type: AnnotationType) => {
+    if (type === 'eraser') return;
     const newAnnotation: Annotation = {
         id: `${Date.now()}`,
         highlightAreas: [highlightArea],
         type: type,
+        comment: '',
         pageIndex: highlightArea.pageIndex,
+        content: highlightArea.content,
     };
-    setAnnotations(prev => [...prev, newAnnotation]);
+    setAnnotations(prev => {
+        const updatedAnnotations = [...prev, newAnnotation];
+        saveAnnotations(updatedAnnotations); // Auto-save on change
+        return updatedAnnotations;
+    });
   };
+
+  const updateAnnotationComment = (id: string, comment: string) => {
+    setAnnotations(prev => {
+        const updatedAnnotations = prev.map(ann => ann.id === id ? { ...ann, comment } : ann);
+        saveAnnotations(updatedAnnotations); // Auto-save on change
+        return updatedAnnotations;
+    });
+  }
 
   const renderHighlights = (props: RenderHighlightsProps) => (
     <div>
       {annotations
         .filter(ann => ann.pageIndex === props.pageIndex)
         .map((ann, index) => (
-          <div
-            key={index}
-            style={Object.assign(
-              {},
-              {
-                background: ann.type === 'highlight' ? 'yellow' : 'red',
-                opacity: 0.4,
-              },
-              props.getCssProperties(ann.highlightAreas[0], props.rotation)
-            )}
-            onClick={() => {
-              if (annotationType === 'eraser') {
-                setAnnotations(prev => prev.filter(a => a.id !== ann.id));
-              }
-            }}
-          />
+          <React.Fragment key={index}>
+            <Popover>
+              <PopoverTrigger asChild>
+                <div
+                    style={Object.assign(
+                    {},
+                    {
+                        background: ann.type === 'highlight' ? 'yellow' : 'red',
+                        opacity: 0.4,
+                    },
+                    props.getCssProperties(ann.highlightAreas[0], props.rotation)
+                    )}
+                    onClick={() => {
+                        if (annotationType === 'eraser') {
+                           setAnnotations(prev => {
+                                const updated = prev.filter(a => a.id !== ann.id);
+                                saveAnnotations(updated);
+                                return updated;
+                            });
+                        }
+                    }}
+                />
+              </PopoverTrigger>
+              <PopoverContent className="w-80">
+                <div className="grid gap-4">
+                  <div className="space-y-2">
+                    <h4 className="font-medium leading-none">Comment</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Add a comment to this annotation.
+                    </p>
+                  </div>
+                  <Textarea 
+                    defaultValue={ann.comment}
+                    onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
+                    placeholder="Type your comment here."
+                  />
+                </div>
+              </PopoverContent>
+            </Popover>
+          </React.Fragment>
         ))}
     </div>
   );
 
+  const handleSummarizeSelection = useCallback(
+    (selection: HighlightTarget) => {
+      const { selectedText } = selection;
+      if (!selectedText) return;
+
+      setIsSummarizing(true);
+      summarizeText(selectedText)
+        .then(summary => {
+          toast({
+            title: 'AI Summary',
+            description: summary || 'Could not generate a summary.',
+          });
+        })
+        .catch(error => {
+          toast({
+            variant: 'destructive',
+            title: 'Summarization Failed',
+            description: error.message || 'An unexpected error occurred.',
+          });
+        })
+        .finally(() => {
+          setIsSummarizing(false);
+          // Clear text selection after summarizing
+          if (window.getSelection) {
+            window.getSelection()?.removeAllRanges();
+          }
+        });
+    },
+    [toast]
+  );
+  
   const highlightPluginInstance = highlightPlugin({
     renderHighlights,
     trigger: Trigger.TextSelection,
@@ -161,7 +244,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
             addAnnotation(areas[0], annotationType);
         }
     },
+    selectionHandler: handleSummarizeSelection,
   });
+
 
   const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
       ...slot,
@@ -174,7 +259,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   });
   
   const layoutPlugin = defaultLayoutPlugin({
-    sidebarTabs: (defaultTabs) => [defaultTabs[0]], // Show only thumbnails
+    sidebarTabs: (defaultTabs) => [], // Hide sidebar
     transformToolbar: transform,
   });
 
@@ -208,10 +293,29 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
               <TooltipContent>Eraser</TooltipContent>
           </Tooltip>
           <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => highlightPluginInstance.getSelection()?.(handleSummarizeSelection)}
+                disabled={isSummarizing}
+              >
+                {isSummarizing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Bot className="h-5 w-5" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Summarize Selection (AI)</TooltipContent>
+          </Tooltip>
+          <Tooltip>
               <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={saveAnnotations}><Save className="h-5 w-5" /></Button>
+                  <Button variant="ghost" size="icon" onClick={handleSave}><Save className="h-5 w-5" /></Button>
               </TooltipTrigger>
               <TooltipContent>Save Annotations</TooltipContent>
+          </Tooltip>
+           <Tooltip>
+              <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)}><MessageSquare className="h-5 w-5" /></Button>
+              </TooltipTrigger>
+              <TooltipContent>Show Comments</TooltipContent>
           </Tooltip>
           <Tooltip>
               <TooltipTrigger asChild>
@@ -236,14 +340,22 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
   );
 
   return (
-    <div className="h-[calc(100vh-12rem)] w-full relative border rounded-lg overflow-hidden">
-        <AnnotationToolbar />
-        <Worker workerUrl={workerUrl}>
-            <Viewer
-            fileUrl={pdf.url}
-            plugins={[layoutPlugin, highlightPluginInstance]}
-            />
-        </Worker>
+    <div className="flex h-[calc(100vh-12rem)] w-full">
+        <div className="flex-grow h-full w-full relative border rounded-lg overflow-hidden">
+            <AnnotationToolbar />
+            <Worker workerUrl={workerUrl}>
+                <Viewer
+                fileUrl={pdf.url}
+                plugins={[layoutPlugin, highlightPluginInstance]}
+                />
+            </Worker>
+        </div>
+        <CommentsSidebar 
+            isOpen={isSidebarOpen} 
+            onClose={() => setIsSidebarOpen(false)}
+            annotations={annotations}
+            onUpdateComment={updateAnnotationComment}
+        />
     </div>
   );
 };
