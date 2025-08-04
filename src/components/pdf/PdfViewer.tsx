@@ -11,8 +11,6 @@ import type { ToolbarProps, TransformToolbarSlot } from '@react-pdf-viewer/defau
 import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
 import type { RenderHighlightsProps } from '@react-pdf-viewer/highlight';
 
-import { pdfjs } from 'pdfjs-dist';
-
 interface PdfViewerProps {
   pdf: PdfDocument;
   onClose: () => void;
@@ -22,7 +20,12 @@ interface PdfViewerProps {
 
 const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) => {
   const [message, setMessage] = React.useState('');
-  let annotationIdCounter = pdf.annotations?.length || 0;
+  const [annotations, setAnnotations] = React.useState<Annotation[]>(pdf.annotations || []);
+  let annotationIdCounter = annotations.length;
+
+  React.useEffect(() => {
+    setAnnotations(pdf.annotations || []);
+  }, [pdf]);
 
   const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
     ...slot,
@@ -61,7 +64,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
 
   const renderHighlights = (props: RenderHighlightsProps) => (
     <div>
-      {pdf.annotations
+      {annotations
         .filter(ann => ann.pageIndex === props.pageIndex)
         .map((highlight, index) => (
           <div
@@ -84,13 +87,12 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
     trigger: Trigger.TextSelection,
   });
 
-  const { addHighlight } = highlightPluginInstance;
-
   const saveAnnotations = async () => {
     try {
       const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
+      // Ensure we are saving the latest annotations from the state
       await updateDoc(doc(db, pdfDocPath), {
-        annotations: pdf.annotations,
+        annotations: annotations,
       });
       setMessage('Annotations Saved!');
       setTimeout(() => setMessage(''), 3000);
@@ -101,6 +103,27 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
     }
   };
 
+  const handleAnnotationAdd = (annotation: Annotation) => {
+    const newAnnotation = { ...annotation, id: `${++annotationIdCounter}` };
+    setAnnotations(prev => [...prev, newAnnotation]);
+  };
+
+  const handleAnnotationRemove = (annotationId: string) => {
+    setAnnotations(prev => prev.filter((ann) => ann.id !== annotationId));
+  };
+  
+  const handleAnnotationUpdate = (annotation: Annotation) => {
+    setAnnotations(prev => {
+        const index = prev.findIndex(ann => ann.id === annotation.id);
+        if (index > -1) {
+           const newAnnotations = [...prev];
+           newAnnotations[index] = annotation;
+           return newAnnotations;
+        }
+        return prev;
+    });
+  };
+
   const layoutPlugin = defaultLayoutPlugin({
     sidebarTabs: (defaultTabs) => [
       defaultTabs[0], // Thumbnails
@@ -108,68 +131,18 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId }) =>
     transformToolbar: transform,
   });
 
-  const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+  const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 
   return (
-    <div className="h-[calc(100vh-12rem)] w-full"
-      onMouseUp={(e) => {
-        // Stop the event from bubbling up to the core layer
-        e.stopPropagation();
-
-        const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0) {
-          return;
-        }
-
-        const range = selection.getRangeAt(0);
-        if (range.collapsed) {
-          return;
-        }
-
-        // This is a simplified example. In a real-world scenario, you'd need a more robust way
-        // to determine the page index based on the selection.
-        // For now, we'll assume page 0.
-        const currentPage = 0; 
-        
-        const highlightAreas = Array.from(Array(selection.rangeCount).keys()).map(i => {
-            const r = selection.getRangeAt(i);
-            const rect = r.getBoundingClientRect();
-            return {
-                height: rect.height,
-                width: rect.width,
-                left: rect.left,
-                top: rect.top,
-                pageIndex: currentPage,
-            };
-        });
-
-        addHighlight({
-            highlightAreas
-        });
-        
-        selection.removeAllRanges();
-      }}
-    >
+    <div className="h-[calc(100vh-12rem)] w-full">
       <Worker workerUrl={workerUrl}>
         <Viewer
           fileUrl={pdf.url}
           plugins={[layoutPlugin, highlightPluginInstance]}
-          initialAnnotations={pdf.annotations}
-          onAnnotationAdd={(annotation) => {
-            if (!Array.isArray(pdf.annotations)) {
-                pdf.annotations = [];
-            }
-            (pdf.annotations as Annotation[]).push({ ...annotation, id: `${++annotationIdCounter}` });
-          }}
-          onAnnotationRemove={(annotationId) => {
-            pdf.annotations = (pdf.annotations as Annotation[]).filter((ann) => ann.id !== annotationId);
-          }}
-          onAnnotationUpdate={(annotation) => {
-             const index = (pdf.annotations as Annotation[]).findIndex(ann => ann.id === annotation.id);
-             if (index > -1) {
-                (pdf.annotations as Annotation[])[index] = annotation;
-             }
-          }}
+          initialAnnotations={annotations}
+          onAnnotationAdd={handleAnnotationAdd}
+          onAnnotationRemove={handleAnnotationRemove}
+          onAnnotationUpdate={handleAnnotationUpdate}
         />
       </Worker>
     </div>
