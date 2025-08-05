@@ -122,8 +122,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     toast({ title: "Annotations Saved" });
   }, [annotations, saveAnnotations, toast]);
   
-  const getCanvasAndCoords = (e: React.MouseEvent<HTMLDivElement>) => {
-    const pageIndex = parseInt(e.currentTarget.dataset.pageIndex || '0', 10);
+  const getCanvasAndCoords = (e: React.MouseEvent<HTMLElement>, pageIndex: number) => {
     const canvas = drawingCanvasRefs.current[pageIndex];
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
@@ -134,10 +133,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   }
 
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    const eventData = getCanvasAndCoords(e);
+  const handleMouseDown = (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+    const eventData = getCanvasAndCoords(e, pageIndex);
     if (!eventData) return;
-    const { x, y, pageIndex } = eventData;
+    const { x, y } = eventData;
     
     if (activeTool !== 'select') {
         setSelectedAnnotationId(null);
@@ -160,7 +159,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
       if (clickedAnnotation) {
         const newAnnotations = annotations.filter(ann => ann.id !== clickedAnnotation.id);
         setStateWithHistory(newAnnotations);
-        saveAnnotations(newAnnotations);
       }
       return;
     }
@@ -177,20 +175,18 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
             };
             const newAnns = [...annotations, newAnnotation];
             setStateWithHistory(newAnns);
-            saveAnnotations(newAnns);
         }
         setIsDrawing(false);
         return;
     }
 
     if (activeTool === 'check' || activeTool === 'cross') {
-        const size = 20 / zoom;
+        const size = 20;
         const newAnnotation: Annotation = {
             ...baseAnnotation, x: x - (size/2), y: y - (size/2), width: size, height: size,
         };
         const newAnns = [...annotations, newAnnotation];
         setStateWithHistory(newAnns);
-        saveAnnotations(newAnns);
         setIsDrawing(false);
         return;
     }
@@ -202,8 +198,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     setStateWithHistory(prev => [...prev, newAnnotation]);
   };
   
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-      const eventData = getCanvasAndCoords(e);
+  const handleMouseMove = (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+      const eventData = getCanvasAndCoords(e, pageIndex);
       if (!eventData) return;
       const { x, y } = eventData;
 
@@ -272,6 +268,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   useEffect(() => {
     const updatedAnnotations = annotations.map(ann => ({...ann, isSelected: ann.id === selectedAnnotationId}));
     setStateWithHistory(updatedAnnotations);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAnnotationId]);
 
 
@@ -282,6 +279,13 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
         onSave={handleSave} onClose={onClose} pdfName={pdf.name}
         onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1}
         zoom={zoom} onZoomIn={() => setZoom(z => Math.min(z + 0.2, 5))} onZoomOut={() => setZoom(z => Math.max(z - 0.2, 0.2))}
+        onDelete={() => {
+          if (selectedAnnotationId) {
+            setStateWithHistory(prev => prev.filter(a => a.id !== selectedAnnotationId));
+            setSelectedAnnotationId(null);
+          }
+        }}
+        isAnnotationSelected={!!selectedAnnotationId}
       />
       {isLoading ? (
         <div className="flex-grow flex items-center justify-center text-white">
@@ -291,17 +295,17 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
         <div 
             ref={canvasContainerRef} 
             className="flex-grow overflow-auto p-4 bg-gray-600 space-y-4"
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
         >
           {pdfDoc && Array.from({ length: pdfDoc.numPages }).map((_, index) => (
             <PageCanvas key={index} pdfDoc={pdfDoc} pageIndex={index}
                 annotations={annotations.filter(a => a.pageIndex === index)}
                 onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
                 activeTool={activeTool}
                 drawingCanvasRef={el => drawingCanvasRefs.current[index] = el}
                 zoom={zoom}
+                isMoving={isMoving}
             />
           ))}
         </div>
@@ -315,14 +319,17 @@ interface PageCanvasProps {
     pdfDoc: pdfjsLib.PDFDocumentProxy;
     pageIndex: number;
     annotations: Annotation[];
-    onMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void;
+    onMouseDown: (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => void;
+    onMouseMove: (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => void;
+    onMouseUp: (e: React.MouseEvent<HTMLDivElement>) => void;
     activeTool: AnnotationTool;
     drawingCanvasRef: (el: HTMLCanvasElement | null) => void;
     zoom: number;
+    isMoving: boolean;
 }
 
 const PageCanvas: React.FC<PageCanvasProps> = React.memo(({ 
-    pdfDoc, pageIndex, annotations, onMouseDown, activeTool, drawingCanvasRef, zoom
+    pdfDoc, pageIndex, annotations, onMouseDown, onMouseMove, onMouseUp, activeTool, drawingCanvasRef, zoom, isMoving
 }) => {
     const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
     const localDrawingCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -353,7 +360,8 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
         case 'marker':
           if (!annotation.path || annotation.path.length === 0) return;
           ctx.globalAlpha = 0.5;
-          ctx.lineWidth = 5 * zoom;
+          ctx.lineWidth = 5;
+          ctx.strokeStyle = annotation.color;
           ctx.beginPath();
           annotation.path.forEach((point, index) => {
               const zPointX = point.x * zoom;
@@ -381,21 +389,21 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
             break;
         case 'check':
             ctx.strokeStyle = annotation.color;
-            ctx.lineWidth = 3 * zoom;
+            ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(zx, zy + zh/2); ctx.lineTo(zx + zw/2, zy + zh); ctx.lineTo(zx + zw, zy);
             ctx.stroke();
             break;
         case 'cross':
             ctx.strokeStyle = annotation.color;
-            ctx.lineWidth = 3 * zoom;
+            ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(zx,zy); ctx.lineTo(zx+zw, zy+zh); ctx.moveTo(zx+zw, zy); ctx.lineTo(zx, zy+zh);
             ctx.stroke();
             break;
         case 'text':
             if (annotation.text && annotation.fontSize) {
-                ctx.font = `${annotation.fontSize * zoom}px Arial`;
+                ctx.font = `${annotation.fontSize}px Arial`;
                 ctx.fillText(annotation.text, zx, zy);
             }
             break;
@@ -460,6 +468,7 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
         return () => {
             if (renderTask.current) {
                 renderTask.current.cancel();
+                renderTask.current = null;
             }
         };
     }, [pdfDoc, pageIndex, zoom]);
@@ -491,8 +500,10 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
         <div 
             className="relative mx-auto shadow-lg"
             style={{ width: pdfCanvasRef.current?.width, height: pdfCanvasRef.current?.height }}
-            onMouseDown={onMouseDown}
-            data-page-index={pageIndex}
+            onMouseDown={(e) => onMouseDown(pageIndex, e)} 
+            onMouseMove={(e) => onMouseMove(pageIndex, e)}
+            onMouseUp={onMouseUp} 
+            onMouseLeave={onMouseUp}
         >
             <canvas ref={pdfCanvasRef} style={{cursor: getCursor()}} />
             <canvas ref={localDrawingCanvasRef} className="absolute top-0 left-0" style={{cursor: getCursor()}} />
@@ -506,22 +517,35 @@ interface AnnotationToolbarProps {
     setActiveTool: (tool: AnnotationTool) => void;
     color: string;
     setColor: (color: string) => void;
-    onSave: () => void; onClose: () => void; pdfName: string;
-    onUndo: () => void; onRedo: () => void; canUndo: boolean; canRedo: boolean;
-    zoom: number; onZoomIn: () => void; onZoomOut: () => void;
+    onSave: () => void; 
+    onClose: () => void; 
+    pdfName: string;
+    onUndo: () => void; 
+    onRedo: () => void; 
+    canUndo: boolean; 
+    canRedo: boolean;
+    zoom: number; 
+    onZoomIn: () => void; 
+    onZoomOut: () => void;
+    onDelete: () => void;
+    isAnnotationSelected: boolean;
 }
 
 const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({ 
     activeTool, setActiveTool, color, setColor, onSave, onClose, pdfName, 
-    onUndo, onRedo, canUndo, canRedo, zoom, onZoomIn, onZoomOut
+    onUndo, onRedo, canUndo, canRedo, zoom, onZoomIn, onZoomOut,
+    onDelete, isAnnotationSelected
 }) => {
   const isMobile = useIsMobile();
-  const tools: { name: AnnotationTool, icon: React.ElementType }[] = [
-    { name: 'select', icon: MousePointer2 }, { name: 'marker', icon: Brush },
-    { name: 'square', icon: Square }, { name: 'circle', icon: Circle },
-    { name: 'triangle', icon: Triangle }, { name: 'check', icon: Check },
-    { name: 'cross', icon: X }, { name: 'text', icon: Type },
-    { name: 'eraser', icon: Eraser },
+  const tools: { name: AnnotationTool, icon: React.ElementType, isShape: boolean }[] = [
+    { name: 'select', icon: MousePointer2, isShape: false }, 
+    { name: 'marker', icon: Brush, isShape: false },
+    { name: 'text', icon: Type, isShape: false },
+    { name: 'square', icon: Square, isShape: true }, 
+    { name: 'circle', icon: Circle, isShape: true },
+    { name: 'triangle', icon: Triangle, isShape: true }, 
+    { name: 'check', icon: Check, isShape: true },
+    { name: 'cross', icon: X, isShape: true },
   ];
 
   const renderTools = () => (
@@ -563,8 +587,28 @@ const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
                 </DropdownMenuContent>
             </DropdownMenu>
           ) : renderTools() }
-
+          
+          <Tooltip>
+            <TooltipTrigger asChild>
+                <Button variant='ghost' size='icon' className="text-white hover:bg-gray-700" onClick={() => setActiveTool('eraser')} >
+                     <Eraser className={`h-5 w-5 ${activeTool === 'eraser' ? 'text-blue-400' : ''}`} />
+                </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>Eraser</p></TooltipContent>
+          </Tooltip>
+          
           <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer" title="Select color"/>
+          
+          { isAnnotationSelected && 
+             <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button variant='ghost' size='icon' className="text-red-500 hover:bg-gray-700" onClick={onDelete}>
+                        <Trash2 className="h-5 w-5" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent><p>Delete</p></TooltipContent>
+            </Tooltip>
+          }
         </TooltipProvider>
       </div>
       
@@ -583,3 +627,5 @@ const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
 };
 
 export default PdfViewer;
+
+    
