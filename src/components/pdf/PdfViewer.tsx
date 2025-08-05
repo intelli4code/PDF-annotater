@@ -29,10 +29,9 @@ interface PdfViewerProps {
 const cleanAnnotationsForFirebase = (annotations: Annotation[]): any[] => {
     return annotations.map(ann => {
         const cleanedAnn: any = { ...ann };
-        // Firestore doesn't like undefined values.
         Object.keys(cleanedAnn).forEach(key => {
             const K = key as keyof Annotation;
-            if (cleanedAnn[K] === undefined) {
+            if (cleanedAnn[K] === undefined || K === 'isSelected') {
                 delete cleanedAnn[K];
             }
         });
@@ -56,6 +55,11 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const drawingCanvasRefs = useRef<{ [key: number]: HTMLCanvasElement | null }>({});
   const { toast } = useToast();
+  
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
+  const [moveStartPoint, setMoveStartPoint] = useState<{x: number, y: number} | null>(null);
+
 
   const setStateWithHistory = useCallback((newAnnotations: Annotation[] | ((prev: Annotation[]) => Annotation[])) => {
     const updatedAnnotations = typeof newAnnotations === 'function' ? newAnnotations(annotations) : newAnnotations;
@@ -117,62 +121,112 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     saveAnnotations(annotations);
     toast({ title: "Annotations Saved" });
   }, [annotations, saveAnnotations, toast]);
-
-  const getRelativeCoords = (e: React.MouseEvent<HTMLDivElement>) => {
-    const canvas = drawingCanvasRefs.current[parseInt(e.currentTarget.dataset.pageIndex || '0', 10)];
-    if (!canvas) return { x: 0, y: 0 };
+  
+  const getCanvasAndCoords = (e: React.MouseEvent<HTMLDivElement>) => {
+    const pageIndex = parseInt(e.currentTarget.dataset.pageIndex || '0', 10);
+    const canvas = drawingCanvasRefs.current[pageIndex];
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    return {
-        x: Math.max(0, Math.min(x, rect.width)),
-        y: Math.max(0, Math.min(y, rect.height))
-    };
-  };
-  
-  const handleMouseDown = (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
-    if (activeTool === 'select' || activeTool === 'eraser') return;
+
+    return { canvas, x, y, pageIndex, rect };
+  }
+
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const eventData = getCanvasAndCoords(e);
+    if (!eventData) return;
+    const { canvas, x, y, pageIndex } = eventData;
     
-    const { x, y } = getRelativeCoords(e);
+    // Deselect annotations when clicking away
+    if (activeTool !== 'select') {
+        setSelectedAnnotationId(null);
+    }
+
+    if (activeTool === 'select') {
+        const clickedAnnotation = getAnnotationAtPoint(x, y, pageIndex);
+        if (clickedAnnotation) {
+            setSelectedAnnotationId(clickedAnnotation.id);
+            setIsMoving(true);
+            setMoveStartPoint({x, y});
+        } else {
+            setSelectedAnnotationId(null);
+        }
+        return;
+    }
+
+    if (activeTool === 'eraser') {
+      const clickedAnnotation = getAnnotationAtPoint(x, y, pageIndex);
+      if (clickedAnnotation) {
+        const newAnnotations = annotations.filter(ann => ann.id !== clickedAnnotation.id);
+        setStateWithHistory(newAnnotations);
+        saveAnnotations(newAnnotations);
+      }
+      return;
+    }
+
+    setIsDrawing(true);
+
+    const baseAnnotation = { id: `${Date.now()}`, pageIndex, type: activeTool, color };
 
     if (activeTool === 'text') {
         const text = prompt("Enter text:");
         if (text) {
             const newAnnotation: Annotation = {
-                id: `${Date.now()}`, pageIndex, type: 'text', color, x, y,
-                text, fontSize: 16 * zoom, width: 0, height: 0,
+                ...baseAnnotation, x, y, text, fontSize: 16 * zoom, width: 0, height: 0,
             };
             const newAnns = [...annotations, newAnnotation];
             setStateWithHistory(newAnns);
             saveAnnotations(newAnns);
         }
+        setIsDrawing(false);
         return;
     }
 
     if (activeTool === 'check' || activeTool === 'cross') {
-        const size = 20 * zoom;
+        const size = 20; // fixed size regardless of zoom
         const newAnnotation: Annotation = {
-            id: `${Date.now()}`, pageIndex, type: activeTool, color,
-            x: x - size / 2, y: y - size / 2, width: size, height: size,
+            ...baseAnnotation, x: x - (size/2), y: y - (size/2), width: size, height: size,
         };
         const newAnns = [...annotations, newAnnotation];
         setStateWithHistory(newAnns);
         saveAnnotations(newAnns);
+        setIsDrawing(false);
         return;
     }
     
-    setIsDrawing(true);
     const newAnnotation: Annotation = {
-        id: `${Date.now()}`, pageIndex, type: activeTool, color,
-        x, y, width: 0, height: 0,
+        ...baseAnnotation, x, y, width: 0, height: 0,
         path: activeTool === 'marker' ? [{x, y}] : undefined,
     };
     setStateWithHistory(prev => [...prev, newAnnotation]);
   };
   
-  const handleMouseMove = (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+      const eventData = getCanvasAndCoords(e);
+      if (!eventData) return;
+      const { x, y } = eventData;
+
+      if (isMoving && selectedAnnotationId && moveStartPoint) {
+          const dx = x - moveStartPoint.x;
+          const dy = y - moveStartPoint.y;
+          
+          setStateWithHistory(prev => prev.map(ann => {
+              if (ann.id === selectedAnnotationId) {
+                  const newAnn = { ...ann, x: ann.x + dx, y: ann.y + dy };
+                  if (newAnn.path) {
+                    newAnn.path = newAnn.path.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                  }
+                  return newAnn;
+              }
+              return ann;
+          }));
+          setMoveStartPoint({x,y});
+          return;
+      }
+    
     if (!isDrawing) return;
-    const { x, y } = getRelativeCoords(e);
     
     setStateWithHistory(prev => prev.map(ann => {
         if (ann.id === prev[prev.length - 1].id) {
@@ -186,50 +240,39 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   };
   
   const handleMouseUp = useCallback(() => {
-    if (isDrawing) {
+    if (isDrawing || isMoving) {
       setIsDrawing(false);
+      setIsMoving(false);
+      setMoveStartPoint(null);
       saveAnnotations(history[historyIndex]);
     }
-  }, [isDrawing, history, historyIndex, saveAnnotations]);
+  }, [isDrawing, isMoving, history, historyIndex, saveAnnotations]);
+  
+  const getAnnotationAtPoint = (x: number, y: number, pageIndex: number): Annotation | null => {
+    const pageAnnotations = annotations.filter(ann => ann.pageIndex === pageIndex).reverse(); // LIFO
+    for (const ann of pageAnnotations) {
+      if (isPointInAnnotation(x, y, ann)) return ann;
+    }
+    return null;
+  }
 
-  const isPointInRect = (x: number, y: number, ann: Annotation) => {
+  const isPointInAnnotation = (x: number, y: number, ann: Annotation): boolean => {
     const MARGIN = 5 * zoom;
-    const x1 = Math.min(ann.x, ann.x + ann.width);
-    const x2 = Math.max(ann.x, ann.x + ann.width);
-    const y1 = Math.min(ann.y, ann.y + ann.height);
-    const y2 = Math.max(ann.y, ann.y + ann.height);
-    return x >= x1 - MARGIN && x <= x2 + MARGIN && y >= y1 - MARGIN && y <= y2 + MARGIN;
-  };
+    if (ann.type === 'marker' && ann.path) {
+        return ann.path.some(point => Math.sqrt(Math.pow(point.x - x, 2) + Math.pow(point.y - y, 2)) <= MARGIN);
+    } else {
+        const x1 = Math.min(ann.x, ann.x + ann.width);
+        const x2 = Math.max(ann.x, ann.x + ann.width);
+        const y1 = Math.min(ann.y, ann.y + ann.height);
+        const y2 = Math.max(ann.y, ann.y + ann.height);
+        return x >= x1 - MARGIN && x <= x2 + MARGIN && y >= y1 - MARGIN && y <= y2 + MARGIN;
+    }
+  }
+  
+  useEffect(() => {
+    setStateWithHistory(prev => prev.map(ann => ({...ann, isSelected: ann.id === selectedAnnotationId})));
+  }, [selectedAnnotationId, setStateWithHistory]);
 
-  const isPointOnPath = (x: number, y: number, path: {x:number, y:number}[]) => {
-      const MARGIN = 5 * zoom;
-      return path.some(point => Math.sqrt(Math.pow(point.x - x, 2) + Math.pow(point.y - y, 2)) <= MARGIN);
-  };
-
-  const handleEraserClick = useCallback((pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
-      if (activeTool !== 'eraser') return;
-      const { x, y } = getRelativeCoords(e);
-
-      let annotationToDeleteId: string | null = null;
-      const pageAnnotations = annotations.filter(ann => ann.pageIndex === pageIndex);
-
-      for (let i = pageAnnotations.length - 1; i >= 0; i--) {
-        const ann = pageAnnotations[i];
-        if (ann.type === 'marker' && ann.path && isPointOnPath(x, y, ann.path)) {
-            annotationToDeleteId = ann.id;
-            break;
-        } else if (ann.type !== 'marker' && isPointInRect(x, y, ann)) {
-            annotationToDeleteId = ann.id;
-            break;
-        }
-      }
-      
-      if (annotationToDeleteId) {
-          const newAnnotations = annotations.filter(ann => ann.id !== annotationToDeleteId);
-          setStateWithHistory(newAnnotations);
-          saveAnnotations(newAnnotations);
-      }
-  }, [activeTool, annotations, saveAnnotations, setStateWithHistory, zoom]);
 
   return (
     <div className="flex h-screen w-full flex-col bg-gray-800">
@@ -244,12 +287,18 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
           <Loader2 className="h-12 w-12 animate-spin" /><span className="ml-4 text-xl">Loading Document...</span>
         </div>
       ) : (
-        <div ref={canvasContainerRef} className="flex-grow overflow-auto p-4 bg-gray-600 space-y-4">
+        <div 
+            ref={canvasContainerRef} 
+            className="flex-grow overflow-auto p-4 bg-gray-600 space-y-4"
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+        >
           {pdfDoc && Array.from({ length: pdfDoc.numPages }).map((_, index) => (
             <PageCanvas key={index} pdfDoc={pdfDoc} pageIndex={index}
                 annotations={annotations.filter(a => a.pageIndex === index)}
-                onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
-                onEraserClick={handleEraserClick} activeTool={activeTool}
+                onMouseDown={handleMouseDown}
+                activeTool={activeTool}
                 drawingCanvasRef={el => drawingCanvasRefs.current[index] = el}
                 zoom={zoom}
             />
@@ -265,67 +314,111 @@ interface PageCanvasProps {
     pdfDoc: pdfjsLib.PDFDocumentProxy;
     pageIndex: number;
     annotations: Annotation[];
-    onMouseDown: (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => void;
-    onMouseMove: (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => void;
-    onMouseUp: () => void;
-    onEraserClick: (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => void;
+    onMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void;
     activeTool: AnnotationTool;
     drawingCanvasRef: (el: HTMLCanvasElement | null) => void;
     zoom: number;
 }
 
 const PageCanvas: React.FC<PageCanvasProps> = React.memo(({ 
-    pdfDoc, pageIndex, annotations, onMouseDown, onMouseMove, onMouseUp, onEraserClick, activeTool, drawingCanvasRef, zoom
+    pdfDoc, pageIndex, annotations, onMouseDown, activeTool, drawingCanvasRef, zoom
 }) => {
     const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
     const localDrawingCanvasRef = useRef<HTMLCanvasElement>(null);
     const renderTask = useRef<pdfjsLib.RenderTask | null>(null);
 
     const drawAnnotation = useCallback((ctx: CanvasRenderingContext2D, annotation: Annotation) => {
-      ctx.strokeStyle = annotation.color;
+      const isSelected = annotation.isSelected;
+      ctx.strokeStyle = isSelected ? '#00BFFF' : annotation.color;
       ctx.fillStyle = annotation.color;
-      ctx.lineWidth = 2 * zoom;
+      
+      // Use original PDF page dimensions for scaling
+      const pdfPage = pdfDoc.getPage(pageIndex + 1);
+      const viewport = pdfPage.then(page => page.getViewport({ scale: zoom }));
 
-      const { x, y, width: w, height: h, type } = annotation;
+      viewport.then(vp => {
+        const { x, y, width: w, height: h, type } = annotation;
+        
+        ctx.lineWidth = 2; // Keep line width consistent
+        if (isSelected) {
+            ctx.setLineDash([6, 3]);
+            ctx.lineWidth = 1;
+        } else {
+            ctx.setLineDash([]);
+            ctx.lineWidth = 2;
+        }
 
-      switch (type) {
-        case 'marker':
-          if (!annotation.path || annotation.path.length === 0) return;
-          ctx.globalAlpha = 0.5; // Make marker semi-transparent
-          ctx.beginPath();
-          annotation.path.forEach((point, index) => index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y));
-          ctx.stroke();
-          ctx.globalAlpha = 1.0;
-          break;
-        case 'square': ctx.strokeRect(x, y, w, h); break;
-        case 'circle':
-          ctx.beginPath();
-          ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, 2 * Math.PI);
-          ctx.stroke();
-          break;
-        case 'triangle':
+        switch (type) {
+          case 'marker':
+            if (!annotation.path || annotation.path.length === 0) return;
+            ctx.globalAlpha = 0.5;
+            ctx.lineWidth = 5 * zoom;
             ctx.beginPath();
-            ctx.moveTo(x + w / 2, y); ctx.lineTo(x, y + h); ctx.lineTo(x + w, y + h);
-            ctx.closePath(); ctx.stroke();
-            break;
-        case 'check':
-            ctx.beginPath();
-            ctx.moveTo(x, y + h/2); ctx.lineTo(x + w/2, y + h); ctx.lineTo(x + w, y);
+            annotation.path.forEach((point, index) => index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y));
             ctx.stroke();
+            ctx.globalAlpha = 1.0;
             break;
-        case 'cross':
+          case 'square': 
+            ctx.strokeRect(x, y, w, h); 
+            if (isSelected) drawHandles(ctx, x, y, w, h);
+            break;
+          case 'circle':
             ctx.beginPath();
-            ctx.moveTo(x,y); ctx.lineTo(x+w, y+h); ctx.moveTo(x+w, y); ctx.lineTo(x, y+h);
+            ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, 2 * Math.PI);
             ctx.stroke();
+            if (isSelected) drawHandles(ctx, x, y, w, h);
             break;
-        case 'text':
-            if (annotation.text && annotation.fontSize) {
-                ctx.font = `${annotation.fontSize}px Arial`;
-                ctx.fillText(annotation.text, x, y);
-            }
-            break;
-      }
-    }, [zoom]);
+          case 'triangle':
+              ctx.beginPath();
+              ctx.moveTo(x + w / 2, y); ctx.lineTo(x, y + h); ctx.lineTo(x + w, y + h);
+              ctx.closePath(); ctx.stroke();
+              if (isSelected) drawHandles(ctx, x, y, w, h);
+              break;
+          case 'check':
+              ctx.strokeStyle = annotation.color;
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.moveTo(x, y + h/2); ctx.lineTo(x + w/2, y + h); ctx.lineTo(x + w, y);
+              ctx.stroke();
+              break;
+          case 'cross':
+              ctx.strokeStyle = annotation.color;
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.moveTo(x,y); ctx.lineTo(x+w, y+h); ctx.moveTo(x+w, y); ctx.lineTo(x, y+h);
+              ctx.stroke();
+              break;
+          case 'text':
+              if (annotation.text && annotation.fontSize) {
+                  ctx.font = `${annotation.fontSize * zoom}px Arial`;
+                  ctx.fillText(annotation.text, x, y);
+              }
+              break;
+        }
+
+        ctx.setLineDash([]);
+      });
+    }, [zoom, pdfDoc, pageIndex]);
+
+    const drawHandles = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) => {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        const size = 8;
+        const handleOffset = size / 2;
+
+        const handles = [
+            { x: x - handleOffset, y: y - handleOffset },
+            { x: x + w - handleOffset, y: y - handleOffset },
+            { x: x - handleOffset, y: y + h - handleOffset },
+            { x: x + w - handleOffset, y: y + h - handleOffset },
+        ];
+        
+        handles.forEach(handle => {
+            ctx.fillRect(handle.x, handle.y, size, size);
+            ctx.strokeRect(handle.x, handle.y, size, size);
+        });
+    }
 
     useEffect(() => {
         let isCancelled = false;
@@ -389,7 +482,7 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
     }, [drawingCanvasRef]);
 
     const getCursor = () => {
-        if (activeTool === 'select') return 'default';
+        if (activeTool === 'select') return 'grab';
         if (activeTool === 'eraser') return 'cell';
         if (activeTool === 'text') return 'text';
         return 'crosshair';
@@ -398,13 +491,12 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
     return (
         <div 
             className="relative mx-auto shadow-lg"
-            style={{ width: pdfCanvasRef.current?.width, height: pdfCanvasRef.current?.height, cursor: getCursor() }}
-            onMouseDown={(e) => onMouseDown(pageIndex, e)} onMouseMove={(e) => onMouseMove(pageIndex, e)}
-            onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onClick={(e) => onEraserClick(pageIndex, e)}
+            style={{ width: pdfCanvasRef.current?.width, height: pdfCanvasRef.current?.height }}
+            onMouseDown={onMouseDown}
             data-page-index={pageIndex}
         >
-            <canvas ref={pdfCanvasRef} />
-            <canvas ref={localDrawingCanvasRef} className="absolute top-0 left-0" />
+            <canvas ref={pdfCanvasRef} style={{cursor: getCursor()}} />
+            <canvas ref={localDrawingCanvasRef} className="absolute top-0 left-0" style={{cursor: getCursor()}} />
         </div>
     );
 });

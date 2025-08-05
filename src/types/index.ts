@@ -14,6 +14,7 @@ export interface Annotation {
   path?: { x: number, y: number }[]; // For freehand 'marker'
   text?: string; // For 'text' tool
   fontSize?: number; // For 'text' tool
+  isSelected?: boolean; // For selection and movement
 }
 
 export interface PdfDocument {
