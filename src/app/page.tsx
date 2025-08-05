@@ -6,7 +6,7 @@ import React, from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { db, signIn } from '@/lib/firebase';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
-import type { PdfDocument, Annotation } from '@/types';
+import type { PdfDocument } from '@/types';
 import PdfUploader from '@/components/pdf/PdfUploader';
 import PdfList from '@/components/pdf/PdfList';
 import PdfViewer from '@/components/pdf/PdfViewer';
@@ -34,15 +34,11 @@ const App: FC = () => {
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const userPdfs = querySnapshot.docs.map(doc => {
             const data = doc.data();
-            const annotations = Array.isArray(data.annotations) 
-              ? data.annotations 
-              : (data.annotations && typeof data.annotations === 'object' ? Object.values(data.annotations) : []);
-
             return {
                 id: doc.id,
                 ...data,
                 createdAt: data.createdAt?.toDate(),
-                annotations: annotations.filter(Boolean),
+                annotations: Array.isArray(data.annotations) ? data.annotations : [],
             } as PdfDocument;
         });
         setPdfs(userPdfs);
@@ -83,6 +79,19 @@ const App: FC = () => {
     );
   }
 
+  if (selectedPdf && user) {
+     return (
+        <PdfViewer 
+          key={selectedPdf.id} 
+          pdf={selectedPdf} 
+          onClose={() => setSelectedPdf(null)} 
+          userId={user.uid} 
+          appId={appId} 
+          onPdfUpdate={handlePdfUpdate}
+        />
+     )
+  }
+
   if (!user) {
     return (
       <div className="flex h-screen w-full flex-col items-center justify-center bg-gray-50">
@@ -99,47 +108,34 @@ const App: FC = () => {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      {selectedPdf ? (
-        <PdfViewer 
-          key={selectedPdf.id} 
-          pdf={selectedPdf} 
-          onClose={() => setSelectedPdf(null)} 
-          userId={user.uid} 
-          appId={appId} 
-          onPdfUpdate={handlePdfUpdate}
-        />
-      ) : (
-        <>
-          <header className="flex-shrink-0 border-b border-border bg-card">
-            <div className="container mx-auto flex h-16 items-center justify-between px-4">
-              <div className="flex items-center gap-3">
-                <FileText className="h-8 w-8 text-primary" />
-                <h1 className="text-2xl font-bold tracking-tight">PDF Annotator Pro</h1>
-              </div>
-              <div className="text-sm text-muted-foreground">
-                <span className="font-semibold text-foreground">User:</span> {user.uid.substring(0, 12)}...
-              </div>
+        <header className="flex-shrink-0 border-b border-border bg-card">
+        <div className="container mx-auto flex h-16 items-center justify-between px-4">
+            <div className="flex items-center gap-3">
+            <FileText className="h-8 w-8 text-primary" />
+            <h1 className="text-2xl font-bold tracking-tight">PDF Annotator Pro</h1>
             </div>
-          </header>
+            <div className="text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">User:</span> {user.uid.substring(0, 12)}...
+            </div>
+        </div>
+        </header>
 
-          <main className="container mx-auto flex-grow p-4 md:p-8">
-             <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
-                <div className="md:col-span-4 lg:col-span-3">
-                    <PdfUploader userId={user.uid} appId={appId} />
-                </div>
-                <div className="md:col-span-8 lg:col-span-9">
-                    <PdfList
-                        pdfs={pdfs}
-                        onPdfSelect={setSelectedPdf}
-                        loading={loadingPdfs}
-                        userId={user.uid}
-                        appId={appId}
-                    />
-                </div>
-             </div>
-          </main>
-        </>
-      )}
+        <main className="container mx-auto flex-grow p-4 md:p-8">
+            <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
+            <div className="md:col-span-4 lg:col-span-3">
+                <PdfUploader userId={user.uid} appId={appId} />
+            </div>
+            <div className="md:col-span-8 lg:col-span-9">
+                <PdfList
+                    pdfs={pdfs}
+                    onPdfSelect={setSelectedPdf}
+                    loading={loadingPdfs}
+                    userId={user.uid}
+                    appId={appId}
+                />
+            </div>
+            </div>
+        </main>
       <Toaster />
     </div>
   );
