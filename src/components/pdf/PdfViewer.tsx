@@ -1,42 +1,36 @@
 
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
-import type { PdfDocument, Annotation } from '@/types';
-import { db } from '@/lib/firebase';
-import { supabase } from '@/lib/supabase';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import type { PdfDocument, Annotation, AnnotationTool } from '@/types';
+import { db, supabase } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { summarizeText } from '@/ai/flows/summarize-text-flow';
-
-import { Viewer, Worker } from '@react-pdf-viewer/core';
-import { 
-    defaultLayoutPlugin, 
-    ToolbarProps, 
-    TransformToolbarSlot,
-} from '@react-pdf-viewer/default-layout';
-
-import {
-    highlightPlugin,
-    Trigger
-} from '@react-pdf-viewer/highlight';
-import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
-
-
-import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Highlighter, Edit, Eraser, Download, FileJson, Save, Bot, MessageSquare, Loader2, XCircle, Palette } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
+import {
+  Square,
+  Circle,
+  Triangle,
+  Check,
+  X,
+  MousePointer2,
+  Brush,
+  Eraser,
+  Save,
+  Download,
+  XCircle,
+  Loader2,
+  FileJson,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Textarea } from '@/components/ui/textarea';
-import CommentsSidebar from './CommentsSidebar';
+} from '@/components/ui/tooltip';
 
-
-type AnnotationMode = 'highlight' | 'erase';
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -46,361 +40,334 @@ interface PdfViewerProps {
   onPdfUpdate: (pdf: PdfDocument) => void;
 }
 
-const getAnnotationsArray = (annotations: any): Annotation[] => {
-    if (Array.isArray(annotations)) {
-        return annotations.filter(a => a && a.highlightAreas);
-    }
-    if (annotations && typeof annotations === 'object') {
-        const annArray = Object.values(annotations).filter((a: any) => a && a.highlightAreas);
-        return annArray as Annotation[];
-    }
-    return [];
-};
-
 const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPdfUpdate }) => {
-  const [annotations, setAnnotations] = useState<Annotation[]>(() => getAnnotationsArray(pdf.annotations));
-  const [annotationMode, setAnnotationMode] = useState<AnnotationMode>('highlight');
-  const [isSummarizing, setIsSummarizing] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
+  const [pages, setPages] = useState<any[]>([]);
+  const [annotations, setAnnotations] = useState<Annotation[]>(pdf.annotations || []);
+  const [activeTool, setActiveTool] = useState<AnnotationTool>('marker');
+  const [color, setColor] = useState('#FF0000');
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const drawingCanvasRef = useRef<{ [key: number]: HTMLCanvasElement | null }>({});
   const { toast } = useToast();
-  
+
+  const renderPdf = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const loadingTask = pdfjsLib.getDocument(pdf.url);
+      const pdfDoc = await loadingTask.promise;
+      const numPages = pdfDoc.numPages;
+      const pagesArray = [];
+
+      for (let i = 1; i <= numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+        pagesArray.push(page);
+      }
+      setPages(pagesArray);
+    } catch (error) {
+      console.error('Error loading PDF:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to load PDF',
+        description: 'The document could not be loaded.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [pdf.url, toast]);
+
+  useEffect(() => {
+    renderPdf();
+  }, [renderPdf]);
+
   const saveAnnotations = useCallback(async (newAnnotations: Annotation[]) => {
     try {
       const pdfDocPath = `artifacts/${appId}/users/${userId}/pdfs/${pdf.id}`;
-      // Convert to a plain object for Firestore
-      const annotationsToSave = newAnnotations.map(ann => ({...ann}));
-      await updateDoc(doc(db, pdfDocPath), {
-        annotations: annotationsToSave,
-      });
-      // Do not toast on auto-save
+      const annotationsToSave = newAnnotations.map(ann => ({ ...ann }));
+      await updateDoc(doc(db, pdfDocPath), { annotations: annotationsToSave });
+      onPdfUpdate({ ...pdf, annotations: newAnnotations });
     } catch (e: any) {
-      console.error("Save failed:", e);
+      console.error('Save failed:', e);
       toast({
-        variant: "destructive",
-        title: "Save Failed",
-        description: e.message || 'An unexpected error occurred while saving annotations.',
+        variant: 'destructive',
+        title: 'Save Failed',
+        description: 'An unexpected error occurred while saving annotations.',
       });
     }
-  }, [appId, userId, pdf.id, toast]);
+  }, [appId, userId, pdf.id, toast, onPdfUpdate, pdf]);
   
-  const handleManualSave = () => {
+  const handleSave = () => {
     saveAnnotations(annotations);
-     toast({
-      title: "Annotations Saved",
-      description: "Your annotations have been successfully saved.",
+    toast({
+        title: "Annotations Saved",
+        description: "Your annotations have been successfully saved to the cloud."
     });
   };
 
-  const handleDownload = async () => {
-    if (!supabase) {
-        toast({
-            variant: 'destructive',
-            title: 'Supabase Not Configured',
-            description: 'Please configure Supabase to download files.',
-        });
-        return;
-    }
-    try {
-        const { data, error } = await supabase.storage.from('main').download(pdf.storagePath);
-        if (error) throw error;
-        const blob = new Blob([data], { type: 'application/pdf' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = pdf.name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    } catch (error: any) {
-        toast({
-            variant: 'destructive',
-            title: 'Download Failed',
-            description: error.message || 'Could not download the PDF.',
-        });
-    }
-  };
+  const drawAnnotation = useCallback((ctx: CanvasRenderingContext2D, annotation: Annotation) => {
+    ctx.strokeStyle = annotation.color;
+    ctx.fillStyle = annotation.color;
+    ctx.lineWidth = 2;
 
-  const handleExport = () => {
-      try {
-          const jsonString = JSON.stringify(annotations, null, 2);
-          const blob = new Blob([jsonString], { type: 'application/json' });
-          const link = document.createElement('a');
-          link.href = URL.createObjectURL(blob);
-          link.download = `${pdf.name.replace('.pdf', '')}_annotations.json`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-      } catch (error: any) {
-          toast({
-              variant: 'destructive',
-              title: 'Export Failed',
-              description: 'Could not export annotations.',
-          });
-      }
-  };
-
-  const addAnnotation = (annotation: Annotation) => {
-    setAnnotations(prevAnns => {
-      const updatedAnnotations = [...prevAnns, annotation];
-      saveAnnotations(updatedAnnotations);
-      onPdfUpdate({ ...pdf, annotations: updatedAnnotations });
-      return updatedAnnotations;
-    });
-  };
-
-  const updateAnnotationComment = (id: string, comment: string) => {
-    setAnnotations(prevAnns => {
-        const updatedAnnotations = prevAnns.map(ann => ann.id === id ? { ...ann, comment } : ann);
-        saveAnnotations(updatedAnnotations);
-        onPdfUpdate({ ...pdf, annotations: updatedAnnotations });
-        return updatedAnnotations;
-    });
-  };
-  
-  const removeAnnotation = (id: string) => {
-    setAnnotations(prevAnns => {
-        const updatedAnnotations = prevAnns.filter(ann => ann.id !== id);
-        saveAnnotations(updatedAnnotations);
-        onPdfUpdate({ ...pdf, annotations: updatedAnnotations });
-        return updatedAnnotations;
-    });
-  };
-
-  const renderHighlights = (props: RenderHighlightsProps) => (
-    <div>
-        {annotations.map((annotation) => (
-            <React.Fragment key={annotation.id}>
-                {annotation.highlightAreas
-                    ?.filter((area) => area.pageIndex === props.pageIndex)
-                    .map((area, idx) => (
-                        <div
-                            key={idx}
-                            style={{
-                                ...props.getCssProperties(area, props.rotation),
-                                cursor: annotationMode === 'erase' ? 'pointer' : 'default',
-                            }}
-                            onClick={() => annotationMode === 'erase' && removeAnnotation(annotation.id)}
-                            className="bg-yellow-400/40"
-                        />
-                    ))}
-            </React.Fragment>
-        ))}
-    </div>
-);
-
-
-  const highlightPluginInstance = highlightPlugin({
-      renderHighlights,
-      trigger: annotationMode === 'highlight' ? Trigger.TextSelection : Trigger.None,
-  });
-
-  const { getSelection } = highlightPluginInstance;
-
-  const layoutPluginInstance = defaultLayoutPlugin({
-      renderToolbar: (
-          Toolbar: (props: ToolbarProps) => React.ReactElement,
-      ) => (
-          <Toolbar>
-              {(slot: TransformToolbarSlot) => {
-                  const {
-                      CurrentPageInput,
-                      Download,
-                      EnterFullScreen,
-                      NumberOfPages,
-                      Print,
-                      Rotate,
-                      Zoom,
-                      ZoomIn,
-                      ZoomOut,
-                  } = slot;
-                  return (
-                      <>
-                          <div style={{ padding: '0px 2px' }}>
-                              <ZoomOut />
-                          </div>
-                          <div style={{ padding: '0px 2px' }}>
-                              <Zoom />
-                          </div>
-                          <div style={{ padding: '0px 2px' }}>
-                              <ZoomIn />
-                          </div>
-                          <div style={{ padding: '0px 2px', marginLeft: 'auto' }}>
-                              <Rotate />
-                          </div>
-                          <div style={{ padding: '0px 2px' }}>
-                              <EnterFullScreen />
-                          </div>
-                          <div style={{ padding: '0px 2px' }}>
-                              <Print />
-                          </div>
-                      </>
-                  );
-              }}
-          </Toolbar>
-      ),
-  });
-  
-  const handleSummarizeSelection = useCallback(
-    (selection: HighlightTarget) => {
-      const { selectedText } = selection;
-      if (!selectedText) return;
-
-      setIsSummarizing(true);
-      summarizeText(selectedText)
-        .then(summary => {
-          toast({
-            title: 'AI Summary',
-            description: summary || 'Could not generate a summary.',
-          });
-        })
-        .catch(error => {
-          toast({
-            variant: 'destructive',
-            title: 'Summarization Failed',
-            description: error.message || 'An unexpected error occurred.',
-          });
-        })
-        .finally(() => {
-          setIsSummarizing(false);
-          if (window.getSelection) {
-            window.getSelection()?.removeAllRanges();
+    switch (annotation.type) {
+      case 'marker':
+        ctx.beginPath();
+        annotation.path?.forEach((point, index) => {
+          if (index === 0) {
+            ctx.moveTo(point.x, point.y);
+          } else {
+            ctx.lineTo(point.x, point.y);
           }
         });
-    },
-    [toast]
-  );
-  
-  
-  const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+        ctx.stroke();
+        break;
+      case 'square':
+        ctx.strokeRect(annotation.x, annotation.y, annotation.width, annotation.height);
+        break;
+      case 'circle':
+        ctx.beginPath();
+        ctx.arc(annotation.x + annotation.width/2, annotation.y + annotation.height/2, Math.abs(annotation.width)/2, 0, 2 * Math.PI);
+        ctx.stroke();
+        break;
+      // Other shapes would go here
+    }
+  }, []);
 
-  const AnnotationToolbar = () => (
-    <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between w-full">
-        <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold truncate max-w-xs">{pdf.name}</h2>
-        </div>
-        <div className="flex items-center gap-2">
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button variant={annotationMode === 'highlight' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationMode('highlight')}>
-                            <Highlighter className="h-5 w-5" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Highlight Text</TooltipContent>
-                </Tooltip>
-                
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button variant={'ghost'} className="text-white hover:bg-gray-700" size="icon" disabled>
-                            <Palette className="h-5 w-5" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Color picker is disabled</TooltipContent>
-                </Tooltip>
-                
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button variant={annotationMode === 'erase' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationMode('erase')}>
-                            <Eraser className="h-5 w-5" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Erase Annotation</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={() => getSelection()?.(handleSummarizeSelection)} disabled={isSummarizing}>
-                            {isSummarizing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Bot className="h-5 w-5" />}
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Summarize Selection (AI)</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={handleManualSave}><Save className="h-5 w-5" /></Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Save Annotations</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)}><MessageSquare className="h-5 w-5" /></Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Show Comments</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={handleDownload}><Download className="h-5 w-5" /></Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Download PDF</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button variant="ghost" className="text-white hover:bg-gray-700" size="icon" onClick={handleExport}><FileJson className="h-5 w-5" /></Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Export Annotations</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-        </div>
-        <div>
-            <Button onClick={onClose} variant="destructive" className="rounded-full">
-                <XCircle className="mr-2 h-5 w-5" />
-                DONE
-            </Button>
-        </div>
-    </div>
-  );
+  const redrawAllAnnotations = useCallback(() => {
+    Object.entries(drawingCanvasRef.current).forEach(([pageIndexStr, canvas]) => {
+        const pageIndex = parseInt(pageIndexStr, 10);
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                annotations
+                    .filter(a => a.pageIndex === pageIndex)
+                    .forEach(a => drawAnnotation(ctx, a));
+            }
+        }
+    });
+  }, [annotations, drawAnnotation]);
+
+
+  useEffect(() => {
+    redrawAllAnnotations();
+  }, [redrawAllAnnotations]);
+  
+  
+  const handleMouseDown = (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+    if (activeTool === 'select' || activeTool === 'eraser') return;
+    
+    const canvas = drawingCanvasRef.current[pageIndex];
+    if (!canvas) return;
+
+    setIsDrawing(true);
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const newAnnotation: Annotation = {
+        id: `${Date.now()}`,
+        pageIndex,
+        type: activeTool,
+        color,
+        x, y, width: 0, height: 0,
+        path: activeTool === 'marker' ? [{x, y}] : undefined,
+    };
+    setAnnotations(prev => [...prev, newAnnotation]);
+  };
+  
+  const handleMouseMove = (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDrawing) return;
+
+    const canvas = drawingCanvasRef.current[pageIndex];
+     if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    setAnnotations(prev => prev.map(ann => {
+        if (ann.id === prev[prev.length - 1].id) {
+            if (ann.type === 'marker' && ann.path) {
+                return { ...ann, path: [...ann.path, {x, y}]};
+            }
+            return { ...ann, width: x - ann.x, height: y - ann.y };
+        }
+        return ann;
+    }));
+  };
+  
+  const handleMouseUp = () => {
+    setIsDrawing(false);
+    saveAnnotations(annotations);
+  };
+  
+   const handleEraserClick = (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+        if (activeTool !== 'eraser') return;
+        const canvas = drawingCanvasRef.current[pageIndex];
+        if (!canvas) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        // Find annotation to delete - simple proximity check for now
+        const annotationToDelete = annotations.find(ann => 
+            ann.pageIndex === pageIndex &&
+            x >= ann.x && x <= ann.x + ann.width &&
+            y >= ann.y && y <= ann.y + ann.height
+        );
+        
+        if (annotationToDelete) {
+            const newAnnotations = annotations.filter(ann => ann.id !== annotationToDelete.id);
+            setAnnotations(newAnnotations);
+            saveAnnotations(newAnnotations);
+        }
+    };
+
 
   return (
-    <div className="flex h-screen w-full flex-col">
-        <AnnotationToolbar />
-        <div className="flex-grow flex h-full w-full">
-            <div className="flex-grow h-full w-full relative bg-gray-200">
-                <Worker workerUrl={workerUrl}>
-                    <div
-                      style={{
-                        height: '100%',
-                        width: '100%',
-                        position: 'relative',
-                      }}
-                    >
-                      <Viewer
-                          fileUrl={pdf.url}
-                          plugins={[layoutPluginInstance, highlightPluginInstance]}
-                          onDocumentLoad={() => {
-                            // Clear stored annotations if PDF is different
-                            const storedPdfId = localStorage.getItem('pdfId');
-                            if (storedPdfId !== pdf.id) {
-                                localStorage.removeItem('annotations');
-                            }
-                            localStorage.setItem('pdfId', pdf.id);
-                          }}
-                          onHighlight={(target: HighlightTarget) => {
-                            if (annotationMode !== 'highlight') return;
-                            const newAnnotation: Annotation = {
-                              id: `${Date.now()}`,
-                              highlightAreas: target.highlightAreas,
-                              type: 'highlight',
-                              comment: '',
-                              pageIndex: target.highlightAreas[0].pageIndex,
-                              content: {
-                                  text: target.selectedText,
-                                  image: '',
-                              },
-                            };
-                            addAnnotation(newAnnotation);
-                          }}
-                      />
-                    </div>
-                </Worker>
-            </div>
-            <CommentsSidebar 
-                isOpen={isSidebarOpen} 
-                onClose={() => setIsSidebarOpen(false)}
-                annotations={annotations}
-                onUpdateComment={updateAnnotationComment}
-            />
+    <div className="flex h-screen w-full flex-col bg-gray-800">
+      <AnnotationToolbar 
+        activeTool={activeTool} 
+        setActiveTool={setActiveTool} 
+        color={color} 
+        setColor={setColor}
+        onSave={handleSave}
+        onClose={onClose}
+        pdfName={pdf.name}
+      />
+      {isLoading ? (
+        <div className="flex-grow flex items-center justify-center text-white">
+          <Loader2 className="h-12 w-12 animate-spin" />
+          <span className="ml-4 text-xl">Loading Document...</span>
         </div>
+      ) : (
+        <div ref={canvasContainerRef} className="flex-grow overflow-auto p-4 bg-gray-600 space-y-4">
+          {pages.map((page, index) => (
+            <PageCanvas 
+                key={index} 
+                page={page} 
+                pageIndex={index}
+                annotations={annotations.filter(a => a.pageIndex === index)}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onEraserClick={handleEraserClick}
+                isDrawing={isDrawing}
+                activeTool={activeTool}
+                drawingCanvasRef={el => drawingCanvasRef.current[index] = el}
+                drawAnnotation={drawAnnotation}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
+
+
+const PageCanvas = ({ page, pageIndex, onMouseDown, onMouseMove, onMouseUp, onEraserClick, activeTool, drawingCanvasRef, drawAnnotation, annotations }) => {
+    const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
+
+    useEffect(() => {
+        const render = async () => {
+            const canvas = pdfCanvasRef.current;
+            if (!canvas) return;
+            const viewport = page.getViewport({ scale: 1.5 });
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            const canvasContext = canvas.getContext('2d');
+            if (canvasContext) {
+                const renderContext = { canvasContext, viewport };
+                await page.render(renderContext).promise;
+            }
+        };
+        render();
+    }, [page]);
+    
+    useEffect(() => {
+      const drawingCanvas = drawingCanvasRef.current;
+      if (!drawingCanvas) return;
+      
+      const ctx = drawingCanvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+        annotations.forEach(a => drawAnnotation(ctx, a));
+      }
+
+    }, [annotations, drawAnnotation, drawingCanvasRef]);
+
+    return (
+        <div 
+            className="relative mx-auto shadow-lg"
+            style={{ width: pdfCanvasRef.current?.width, height: pdfCanvasRef.current?.height }}
+            onMouseDown={(e) => onMouseDown(pageIndex, e)}
+            onMouseMove={(e) => onMouseMove(pageIndex, e)}
+            onMouseUp={onMouseUp}
+            onClick={(e) => onEraserClick(pageIndex, e)}
+        >
+            <canvas ref={pdfCanvasRef} />
+            <canvas
+                ref={drawingCanvasRef}
+                width={pdfCanvasRef.current?.width}
+                height={pdfCanvasRef.current?.height}
+                className="absolute top-0 left-0"
+                style={{ cursor: activeTool === 'select' ? 'default' : 'crosshair' }}
+            />
+        </div>
+    );
+};
+
+
+const AnnotationToolbar = ({ activeTool, setActiveTool, color, setColor, onSave, onClose, pdfName }) => {
+  const tools: { name: AnnotationTool, icon: React.ElementType }[] = [
+    { name: 'select', icon: MousePointer2 },
+    { name: 'marker', icon: Brush },
+    { name: 'square', icon: Square },
+    { name: 'circle', icon: Circle },
+    { name: 'triangle', icon: Triangle },
+    { name: 'check', icon: Check },
+    { name: 'cross', icon: X },
+    { name: 'eraser', icon: Eraser },
+  ];
+
+  return (
+    <div className="bg-gray-900 text-white px-4 py-2 flex items-center justify-between w-full flex-shrink-0">
+      <h2 className="text-lg font-semibold truncate max-w-xs">{pdfName}</h2>
+      <div className="flex items-center gap-2">
+        <TooltipProvider>
+          {tools.map(tool => (
+            <Tooltip key={tool.name}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeTool === tool.name ? 'secondary' : 'ghost'}
+                  className="text-white hover:bg-gray-700"
+                  size="icon"
+                  onClick={() => setActiveTool(tool.name)}
+                >
+                  <tool.icon className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{tool.name.charAt(0).toUpperCase() + tool.name.slice(1)}</TooltipContent>
+            </Tooltip>
+          ))}
+          <input
+            type="color"
+            value={color}
+            onChange={e => setColor(e.target.value)}
+            className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer"
+          />
+        </TooltipProvider>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" className="text-white border-gray-500" onClick={onSave}><Save className="mr-2" /> Save</Button>
+        <Button onClick={onClose} variant="destructive"><XCircle className="mr-2 h-5 w-5" /> Done</Button>
+      </div>
+    </div>
+  );
+};
+
 
 export default PdfViewer;

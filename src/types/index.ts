@@ -1,19 +1,17 @@
 import type { Timestamp } from "firebase/firestore";
-import type { HighlightArea } from "@react-pdf-viewer/highlight";
 
+export type AnnotationTool = 'select' | 'marker' | 'eraser' | 'square' | 'circle' | 'triangle' | 'check' | 'cross';
 
 export interface Annotation {
   id: string;
-  type: 'highlight'; // Only highlight is supported for now
   pageIndex: number;
-  comment: string;
-  
-  // Highlight-specific
-  highlightAreas?: HighlightArea[];
-  content?: {
-      text?: string;
-      image?: string;
-  };
+  type: AnnotationTool;
+  color: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  path?: { x: number, y: number }[]; // For freehand drawing
 }
 
 export interface PdfDocument {
