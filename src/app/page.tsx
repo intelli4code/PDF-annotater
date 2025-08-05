@@ -2,7 +2,7 @@
 'use client';
 
 import type { FC } from 'react';
-import React, from 'react';
+import React, { useState }from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { db, signIn } from '@/lib/firebase';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
@@ -10,9 +10,11 @@ import type { PdfDocument } from '@/types';
 import PdfUploader from '@/components/pdf/PdfUploader';
 import PdfList from '@/components/pdf/PdfList';
 import PdfViewer from '@/components/pdf/PdfViewer';
-import { Loader2, FileText, LogIn } from 'lucide-react';
+import { Loader2, FileText, LogIn, Clipboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Toaster } from "@/components/ui/toaster";
+import { useToast } from '@/hooks/use-toast';
+import { Input } from '@/components/ui/input';
 
 
 declare const __app_id: string;
@@ -22,6 +24,8 @@ const App: FC = () => {
   const [pdfs, setPdfs] = React.useState<PdfDocument[]>([]);
   const [selectedPdf, setSelectedPdf] = React.useState<PdfDocument | null>(null);
   const [loadingPdfs, setLoadingPdfs] = React.useState(true);
+  const { toast } = useToast();
+  const [uidInput, setUidInput] = useState('');
 
   const appId = React.useMemo(() => (typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'), []);
 
@@ -70,6 +74,43 @@ const App: FC = () => {
     setPdfs(prevPdfs => prevPdfs.map(p => p.id === updatedPdf.id ? updatedPdf : p));
     setSelectedPdf(updatedPdf);
   };
+  
+  const handleCopyId = () => {
+    if (user?.uid) {
+      navigator.clipboard.writeText(user.uid);
+      toast({
+        title: 'User ID Copied!',
+        description: 'Your ID has been copied to the clipboard.',
+      });
+    }
+  };
+  
+  const handleLogin = async () => {
+    if (!uidInput) {
+      toast({
+        variant: 'destructive',
+        title: 'User ID Required',
+        description: 'Please enter your User ID to log in.',
+      });
+      return;
+    }
+    const signedInUser = await signIn();
+    if (signedInUser && signedInUser.uid !== uidInput) {
+        toast({
+            variant: 'destructive',
+            title: 'Login Mismatch',
+            description: "The signed-in user's ID does not match the one you entered. A new session may have been created.",
+        });
+    }
+  };
+  
+  const handleCreateNew = async () => {
+    await signIn();
+    toast({
+        title: 'New Account Created',
+        description: 'A new anonymous account has been created for you.',
+    });
+  };
 
   if (authLoading) {
     return (
@@ -94,15 +135,50 @@ const App: FC = () => {
 
   if (!user) {
     return (
-      <div className="flex h-screen w-full flex-col items-center justify-center bg-gray-50">
-        <FileText className="h-16 w-16 text-primary" />
-        <h1 className="mt-4 text-3xl font-bold tracking-tight">PDF Annotator Pro</h1>
-        <p className="mt-2 text-lg text-gray-500">Please sign in to manage your documents.</p>
-        <Button onClick={signIn} className="mt-8 rounded-full bg-primary px-8 py-3 text-lg text-primary-foreground hover:bg-primary/90">
-          <LogIn className="mr-2 h-5 w-5" />
-          Sign In Anonymously
-        </Button>
-      </div>
+        <div className="flex h-screen w-full flex-col items-center justify-center bg-gray-50 p-4">
+            <div className="w-full max-w-md text-center">
+                <FileText className="mx-auto h-16 w-16 text-primary" />
+                <h1 className="mt-4 text-3xl font-bold tracking-tight">PDF Annotator Pro</h1>
+                <p className="mt-2 text-lg text-gray-500">Sign in to manage your documents.</p>
+                <div className="mt-8 space-y-4 text-left">
+                    <div>
+                        <label htmlFor="uid-input" className="text-sm font-medium text-gray-700">
+                           Have a User ID? Enter it here to log back in.
+                        </label>
+                        <div className="mt-1 flex gap-2">
+                             <Input 
+                                id="uid-input"
+                                type="text" 
+                                placeholder="Enter your User ID"
+                                value={uidInput}
+                                onChange={(e) => setUidInput(e.target.value)}
+                                className="flex-grow"
+                            />
+                            <Button onClick={handleLogin} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                                <LogIn className="mr-2 h-5 w-5" />
+                                Login
+                            </Button>
+                        </div>
+                         <p className="mt-2 text-xs text-gray-500">
+                           Note: Firebase creates a new anonymous session. We check if it matches your ID.
+                        </p>
+                    </div>
+
+                    <div className="relative my-4">
+                        <div className="absolute inset-0 flex items-center">
+                            <span className="w-full border-t"></span>
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-gray-50 px-2 text-gray-500">Or</span>
+                        </div>
+                    </div>
+                    
+                    <Button onClick={handleCreateNew} variant="outline" className="w-full">
+                       Create a New Anonymous Account
+                    </Button>
+                </div>
+            </div>
+        </div>
     );
   }
 
@@ -114,8 +190,14 @@ const App: FC = () => {
             <FileText className="h-8 w-8 text-primary" />
             <h1 className="text-2xl font-bold tracking-tight">PDF Annotator Pro</h1>
             </div>
-            <div className="text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">User:</span> {user.uid.substring(0, 12)}...
+            <div 
+                className="text-sm text-muted-foreground flex items-center gap-2 cursor-pointer hover:text-primary"
+                onClick={handleCopyId}
+                title="Click to copy User ID"
+            >
+                <span className="font-semibold text-foreground">User:</span> 
+                <span>{user.uid.substring(0, 12)}...</span>
+                <Clipboard className="h-4 w-4" />
             </div>
         </div>
         </header>

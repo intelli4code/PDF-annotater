@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, signInAnonymously } from "firebase/auth";
+import { getAuth, signInAnonymously, type User } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import firebaseConfig from "./firebase-config";
 
@@ -7,11 +7,13 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const signIn = async () => {
+const signIn = async (): Promise<User | null> => {
   try {
-    await signInAnonymously(auth);
+    const userCredential = await signInAnonymously(auth);
+    return userCredential.user;
   } catch (error) {
     console.error("Error signing in anonymously:", error);
+    return null;
   }
 };
 
