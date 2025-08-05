@@ -192,7 +192,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   const highlightPluginInstance = useMemo(() => highlightPlugin({
       renderHighlights,
       trigger: annotationMode === 'highlight' ? Trigger.TextSelection : Trigger.None,
-  }), [annotationMode, annotations]);
+  }), [annotationMode, annotations, removeAnnotation]);
 
   const { getSelection } = highlightPluginInstance;
 
@@ -374,6 +374,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                             localStorage.setItem('pdfId', pdf.id);
                           }}
                           onHighlight={(target: HighlightTarget) => {
+                            if (annotationMode !== 'highlight') return;
                             const newAnnotation: Annotation = {
                               id: `${Date.now()}`,
                               highlightAreas: target.highlightAreas,
