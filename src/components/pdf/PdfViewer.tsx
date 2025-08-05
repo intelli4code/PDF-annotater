@@ -376,6 +376,7 @@ const PageCanvas: React.FC<PageCanvasProps> = ({
         const renderPage = async () => {
             if (renderTask.current) {
                 renderTask.current.cancel();
+                renderTask.current = null;
             }
 
             const pdfCanvas = pdfCanvasRef.current;
@@ -397,11 +398,8 @@ const PageCanvas: React.FC<PageCanvasProps> = ({
                 try {
                     await newRenderTask.promise;
                 } catch (e: any) {
-                    if (e.name === 'RenderingCancelledException') {
-                        // This is expected if we rapidly change zoom or scroll.
-                        // We don't need to log an error.
-                    } else {
-                        console.error('Page render error:', e);
+                    if (e.name !== 'RenderingCancelledException') {
+                       console.error('Page render error:', e);
                     }
                 }
             }
@@ -413,6 +411,7 @@ const PageCanvas: React.FC<PageCanvasProps> = ({
         return () => {
             if (renderTask.current) {
                 renderTask.current.cancel();
+                renderTask.current = null;
             }
         };
     }, [pdfDoc, pageIndex, zoom]);
