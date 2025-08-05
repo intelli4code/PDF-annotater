@@ -70,7 +70,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     newHistory.push(updatedAnnotations);
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
-  }, [annotations, history, historyIndex]);
+  }, [history, historyIndex]);
   
   const handleUndo = useCallback(() => {
     if (historyIndex > 0) setHistoryIndex(historyIndex - 1);
@@ -177,7 +177,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
         const text = prompt("Enter text:");
         if (text) {
             const newAnnotation: Annotation = {
-                ...baseAnnotation, x, y, text, fontSize: 16 / zoom, width: 0, height: 0,
+                ...baseAnnotation, x, y, text, fontSize: 16, width: 0, height: 0,
             };
             setStateWithHistory(prev => [...prev, newAnnotation]);
         }
@@ -186,7 +186,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     }
 
     if (activeTool === 'check' || activeTool === 'cross') {
-        const size = 20 / zoom;
+        const size = 20;
         const newAnnotation: Annotation = {
             ...baseAnnotation, x: x - (size/2), y: y - (size/2), width: size, height: size,
         };
@@ -258,9 +258,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   }
 
   const isPointInAnnotation = (x: number, y: number, ann: Annotation): boolean => {
-    const MARGIN = 5 / zoom;
+    const MARGIN = 5;
     if (ann.type === 'marker' && ann.path) {
-        const lineWidth = 5 / zoom;
+        const lineWidth = 5;
         return ann.path.some((point, i) => {
             if (i === 0) return false;
             const prevPoint = ann.path[i - 1];
@@ -371,14 +371,14 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
       const zw = w * zoom;
       const zh = h * zoom;
 
-      ctx.lineWidth = isSelected ? 1 : 2; 
+      ctx.lineWidth = isSelected ? 3 : 2; 
       ctx.setLineDash(isSelected ? [6, 3] : []);
       
       switch (type) {
         case 'marker':
           if (!path || path.length === 0) return;
           ctx.globalAlpha = 0.5;
-          ctx.lineWidth = (isSelected ? 6 : 5) / zoom;
+          ctx.lineWidth = (isSelected ? 6 : 5);
           ctx.beginPath();
           path.forEach((point, index) => {
               const zPointX = point.x * zoom;
@@ -477,6 +477,10 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
                 if (e.name !== 'RenderingCancelledException') {
                     console.error('Page render error:', e);
                 }
+            } finally {
+              if (renderTask.current) {
+                renderTask.current = null;
+              }
             }
         };
 
@@ -648,5 +652,3 @@ const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
 };
 
 export default PdfViewer;
-
-    
