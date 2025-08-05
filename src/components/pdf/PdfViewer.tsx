@@ -36,7 +36,7 @@ import { Textarea } from '@/components/ui/textarea';
 import CommentsSidebar from './CommentsSidebar';
 
 
-type AnnotationMode = 'highlight' | 'draw' | 'erase';
+type AnnotationMode = 'highlight' | 'erase';
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -48,10 +48,10 @@ interface PdfViewerProps {
 
 const getAnnotationsArray = (annotations: any): Annotation[] => {
     if (Array.isArray(annotations)) {
-        return annotations.filter(a => a && (a.highlightAreas || a.paths));
+        return annotations.filter(a => a && a.highlightAreas);
     }
     if (annotations && typeof annotations === 'object') {
-        const annArray = Object.values(annotations).filter((a: any) => a && (a.highlightAreas || a.paths));
+        const annArray = Object.values(annotations).filter((a: any) => a && a.highlightAreas);
         return annArray as Annotation[];
     }
     return [];
@@ -312,11 +312,11 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                 
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button variant={annotationMode === 'draw' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" disabled>
+                        <Button variant={'ghost'} className="text-white hover:bg-gray-700" size="icon" disabled>
                             <Edit className="h-5 w-5" />
                         </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Drawing is temporarily disabled</TooltipContent>
+                    <TooltipContent>Drawing is disabled</TooltipContent>
                 </Tooltip>
                 
                 <Tooltip>
@@ -325,7 +325,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                             <Eraser className="h-5 w-5" />
                         </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Eraser</TooltipContent>
+                    <TooltipContent>Erase Annotation</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                     <TooltipTrigger asChild>
@@ -376,26 +376,34 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
         <div className="flex-grow flex h-full w-full">
             <div className="flex-grow h-full w-full relative bg-gray-200">
                 <Worker workerUrl={workerUrl}>
-                    <Viewer
-                        fileUrl={pdf.url}
-                        plugins={[layoutPluginInstance, highlightPluginInstance]}
-                        onHighlight={(areas, selection) => {
-                          if (annotationMode !== 'highlight') return;
-                          const newAnnotation: Annotation = {
-                            id: `${Date.now()}`,
-                            highlightAreas: areas,
-                            type: 'highlight',
-                            comment: '',
-                            pageIndex: areas[0].pageIndex,
-                            content: {
-                                text: selection.selectedText,
-                                image: '',
-                            },
-                          };
-                          addAnnotation(newAnnotation);
-                        }}
-                        renderHighlights={renderHighlightsDecorator}
-                    />
+                    <div
+                      style={{
+                        height: '100%',
+                        width: '100%',
+                        position: 'relative',
+                      }}
+                    >
+                      <Viewer
+                          fileUrl={pdf.url}
+                          plugins={[layoutPluginInstance, highlightPluginInstance]}
+                          renderHighlights={renderHighlightsDecorator}
+                          onHighlight={(areas, selection) => {
+                            if (annotationMode !== 'highlight') return;
+                            const newAnnotation: Annotation = {
+                              id: `${Date.now()}`,
+                              highlightAreas: areas,
+                              type: 'highlight',
+                              comment: '',
+                              pageIndex: areas[0].pageIndex,
+                              content: {
+                                  text: selection.selectedText,
+                                  image: '',
+                              },
+                            };
+                            addAnnotation(newAnnotation);
+                          }}
+                      />
+                    </div>
                 </Worker>
             </div>
             <CommentsSidebar 
