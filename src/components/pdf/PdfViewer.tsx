@@ -29,9 +29,11 @@ interface PdfViewerProps {
 const cleanAnnotationsForFirebase = (annotations: Annotation[]): any[] => {
     return annotations.map(ann => {
         const cleanedAnn: any = { ...ann };
+        // Firestore doesn't like undefined values.
         Object.keys(cleanedAnn).forEach(key => {
-            if (cleanedAnn[key] === undefined || cleanedAnn[key] === null) {
-                delete cleanedAnn[key];
+            const K = key as keyof Annotation;
+            if (cleanedAnn[K] === undefined) {
+                delete cleanedAnn[K];
             }
         });
         return cleanedAnn;
@@ -83,8 +85,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
 
         const page = await loadedPdfDoc.getPage(1);
         const viewport = page.getViewport({ scale: 1.0 });
-        const containerWidth = canvasContainerRef.current?.clientWidth || window.innerWidth;
-        setZoom(containerWidth / viewport.width);
+        if (canvasContainerRef.current) {
+            const containerWidth = canvasContainerRef.current.clientWidth;
+            setZoom(containerWidth / viewport.width);
+        }
 
       } catch (error) {
         console.error('Error loading PDF:', error);
@@ -138,8 +142,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                 id: `${Date.now()}`, pageIndex, type: 'text', color, x, y,
                 text, fontSize: 16 * zoom, width: 0, height: 0,
             };
-            setStateWithHistory(prev => [...prev, newAnnotation]);
-            saveAnnotations([...annotations, newAnnotation]);
+            const newAnns = [...annotations, newAnnotation];
+            setStateWithHistory(newAnns);
+            saveAnnotations(newAnns);
         }
         return;
     }
@@ -150,8 +155,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
             id: `${Date.now()}`, pageIndex, type: activeTool, color,
             x: x - size / 2, y: y - size / 2, width: size, height: size,
         };
-        setStateWithHistory(prev => [...prev, newAnnotation]);
-        saveAnnotations([...annotations, newAnnotation]);
+        const newAnns = [...annotations, newAnnotation];
+        setStateWithHistory(newAnns);
+        saveAnnotations(newAnns);
         return;
     }
     
@@ -285,9 +291,11 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
       switch (type) {
         case 'marker':
           if (!annotation.path || annotation.path.length === 0) return;
+          ctx.globalAlpha = 0.5; // Make marker semi-transparent
           ctx.beginPath();
           annotation.path.forEach((point, index) => index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y));
           ctx.stroke();
+          ctx.globalAlpha = 1.0;
           break;
         case 'square': ctx.strokeRect(x, y, w, h); break;
         case 'circle':
@@ -320,39 +328,45 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
     }, [zoom]);
 
     useEffect(() => {
+        let isCancelled = false;
         const renderPage = async () => {
             if (renderTask.current) {
                 renderTask.current.cancel();
-                renderTask.current = null;
             }
 
             const pdfCanvas = pdfCanvasRef.current;
             const drawingCanvas = localDrawingCanvasRef.current;
-            if (!pdfCanvas || !drawingCanvas) return;
+            if (!pdfCanvas || !drawingCanvas || !pdfDoc) return;
 
-            const page = await pdfDoc.getPage(pageIndex + 1);
-            const viewport = page.getViewport({ scale: zoom });
+            try {
+                const page = await pdfDoc.getPage(pageIndex + 1);
+                const viewport = page.getViewport({ scale: zoom });
 
-            pdfCanvas.height = viewport.height;
-            pdfCanvas.width = viewport.width;
-            drawingCanvas.height = viewport.height;
-            drawingCanvas.width = viewport.width;
-            
-            const pdfContext = pdfCanvas.getContext('2d');
-            if (pdfContext) {
-                const newRenderTask = page.render({ canvasContext: pdfContext, viewport });
-                renderTask.current = newRenderTask;
-                try {
+                pdfCanvas.height = viewport.height;
+                pdfCanvas.width = viewport.width;
+                drawingCanvas.height = viewport.height;
+                drawingCanvas.width = viewport.width;
+                
+                const pdfContext = pdfCanvas.getContext('2d');
+                if (pdfContext) {
+                    const newRenderTask = page.render({ canvasContext: pdfContext, viewport });
+                    renderTask.current = newRenderTask;
                     await newRenderTask.promise;
-                } catch (e: any) {
-                    if (e.name !== 'RenderingCancelledException') console.error('Page render error:', e);
-                } finally {
-                   renderTask.current = null;
+                    if(isCancelled) return;
+                }
+            } catch (e: any) {
+                if (e.name !== 'RenderingCancelledException') {
+                    console.error('Page render error:', e);
+                }
+            } finally {
+                if (!isCancelled) {
+                    renderTask.current = null;
                 }
             }
         };
         renderPage();
         return () => {
+            isCancelled = true;
             if (renderTask.current) {
                 renderTask.current.cancel();
                 renderTask.current = null;
@@ -376,7 +390,7 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
 
     const getCursor = () => {
         if (activeTool === 'select') return 'default';
-        if (activeTool === 'eraser') return 'crosshair';
+        if (activeTool === 'eraser') return 'cell';
         if (activeTool === 'text') return 'text';
         return 'crosshair';
     };
@@ -478,3 +492,5 @@ const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
 };
 
 export default PdfViewer;
+
+    
