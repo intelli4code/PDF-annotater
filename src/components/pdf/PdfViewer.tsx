@@ -189,10 +189,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
 );
 
 
-  const highlightPluginInstance = useMemo(() => highlightPlugin({
+  const highlightPluginInstance = highlightPlugin({
       renderHighlights,
       trigger: annotationMode === 'highlight' ? Trigger.TextSelection : Trigger.None,
-  }), [annotationMode, annotations, removeAnnotation]);
+  });
 
   const { getSelection } = highlightPluginInstance;
 
