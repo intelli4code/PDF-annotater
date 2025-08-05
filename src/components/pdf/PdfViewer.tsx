@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import type { PdfDocument, Annotation } from '@/types';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
@@ -166,7 +166,33 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     });
   };
 
-  const highlightPluginInstance = highlightPlugin();
+  const renderHighlights = (props: RenderHighlightsProps) => (
+    <div>
+        {annotations.map((annotation) => (
+            <React.Fragment key={annotation.id}>
+                {annotation.highlightAreas
+                    ?.filter((area) => area.pageIndex === props.pageIndex)
+                    .map((area, idx) => (
+                        <div
+                            key={idx}
+                            style={{
+                                ...props.getCssProperties(area, props.rotation),
+                                cursor: annotationMode === 'erase' ? 'pointer' : 'default',
+                            }}
+                            onClick={() => annotationMode === 'erase' && removeAnnotation(annotation.id)}
+                            className="bg-yellow-400/40"
+                        />
+                    ))}
+            </React.Fragment>
+        ))}
+    </div>
+);
+
+
+  const highlightPluginInstance = useMemo(() => highlightPlugin({
+      renderHighlights,
+      trigger: annotationMode === 'highlight' ? Trigger.TextSelection : Trigger.None,
+  }), [annotationMode, annotations]);
 
   const { getSelection } = highlightPluginInstance;
 
@@ -213,53 +239,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
           </Toolbar>
       ),
   });
-
-  const renderHighlightsDecorator = (props: RenderHighlightsProps) => (
-    <div>
-      {annotations
-        .filter(ann => ann.type === 'highlight' && ann.pageIndex === props.pageIndex && ann.highlightAreas)
-        .flatMap(ann =>
-          ann.highlightAreas!.map((area, index) => (
-            <Popover key={`${ann.id}-${index}`}>
-              <PopoverTrigger asChild>
-                <div
-                  style={Object.assign(
-                    {},
-                    {
-                      background: 'yellow',
-                      opacity: 0.4,
-                    },
-                    props.getCssProperties(area, props.rotation)
-                  )}
-                  onClick={() => {
-                    if (annotationMode === 'erase') {
-                      removeAnnotation(ann.id);
-                    }
-                  }}
-                />
-              </PopoverTrigger>
-              {annotationMode !== 'erase' && (
-                <PopoverContent className="w-80">
-                  <div className="grid gap-4">
-                    <div className="space-y-2">
-                      <h4 className="font-medium leading-none">Comment</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Add a comment to this annotation.
-                      </p>
-                    </div>
-                    <Textarea
-                      defaultValue={ann.comment}
-                      onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
-                      placeholder="Type your comment here."
-                    />
-                  </div>
-                </PopoverContent>
-              )}
-            </Popover>
-          ))
-        )}
-    </div>
-  );
   
   const handleSummarizeSelection = useCallback(
     (selection: HighlightTarget) => {
@@ -313,10 +292,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <Button variant={'ghost'} className="text-white hover:bg-gray-700" size="icon" disabled>
-                            <Edit className="h-5 w-5" />
+                            <Palette className="h-5 w-5" />
                         </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Drawing is disabled</TooltipContent>
+                    <TooltipContent>Color picker is disabled</TooltipContent>
                 </Tooltip>
                 
                 <Tooltip>
@@ -386,17 +365,23 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                       <Viewer
                           fileUrl={pdf.url}
                           plugins={[layoutPluginInstance, highlightPluginInstance]}
-                          renderHighlights={renderHighlightsDecorator}
-                          onHighlight={(areas, selection) => {
-                            if (annotationMode !== 'highlight') return;
+                          onDocumentLoad={() => {
+                            // Clear stored annotations if PDF is different
+                            const storedPdfId = localStorage.getItem('pdfId');
+                            if (storedPdfId !== pdf.id) {
+                                localStorage.removeItem('annotations');
+                            }
+                            localStorage.setItem('pdfId', pdf.id);
+                          }}
+                          onHighlight={(target: HighlightTarget) => {
                             const newAnnotation: Annotation = {
                               id: `${Date.now()}`,
-                              highlightAreas: areas,
+                              highlightAreas: target.highlightAreas,
                               type: 'highlight',
                               comment: '',
-                              pageIndex: areas[0].pageIndex,
+                              pageIndex: target.highlightAreas[0].pageIndex,
                               content: {
-                                  text: selection.selectedText,
+                                  text: target.selectedText,
                                   image: '',
                               },
                             };
