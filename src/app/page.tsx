@@ -4,13 +4,13 @@
 import type { FC } from 'react';
 import React, { useState }from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { db, signIn } from '@/lib/firebase';
+import { db, signIn, signOut } from '@/lib/firebase';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import type { PdfDocument } from '@/types';
 import PdfUploader from '@/components/pdf/PdfUploader';
 import PdfList from '@/components/pdf/PdfList';
 import PdfViewer from '@/components/pdf/PdfViewer';
-import { Loader2, FileText, LogIn, Clipboard } from 'lucide-react';
+import { Loader2, FileText, LogIn, Clipboard, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from '@/hooks/use-toast';
@@ -112,6 +112,14 @@ const App: FC = () => {
     });
   };
 
+  const handleSignOut = async () => {
+    await signOut();
+    toast({
+      title: 'Signed Out',
+      description: 'You have been successfully signed out.',
+    });
+  };
+
   if (authLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-gray-100">
@@ -190,14 +198,20 @@ const App: FC = () => {
             <FileText className="h-8 w-8 text-primary" />
             <h1 className="text-2xl font-bold tracking-tight">PDF Annotator Pro</h1>
             </div>
-            <div 
-                className="text-sm text-muted-foreground flex items-center gap-2 cursor-pointer hover:text-primary"
-                onClick={handleCopyId}
-                title="Click to copy User ID"
-            >
-                <span className="font-semibold text-foreground">User:</span> 
-                <span>{user.uid.substring(0, 12)}...</span>
-                <Clipboard className="h-4 w-4" />
+            <div className="flex items-center gap-4">
+                <div 
+                    className="text-sm text-muted-foreground flex items-center gap-2 cursor-pointer hover:text-primary"
+                    onClick={handleCopyId}
+                    title="Click to copy User ID"
+                >
+                    <span className="font-semibold text-foreground">User:</span> 
+                    <span>{user.uid.substring(0, 12)}...</span>
+                    <Clipboard className="h-4 w-4" />
+                </div>
+                <Button onClick={handleSignOut} variant="outline" size="sm">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign Out
+                </Button>
             </div>
         </div>
         </header>

@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, signInAnonymously, type User } from "firebase/auth";
+import { getAuth, signInAnonymously, type User, signOut as firebaseSignOut } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import firebaseConfig from "./firebase-config";
 
@@ -17,4 +17,12 @@ const signIn = async (): Promise<User | null> => {
   }
 };
 
-export { app, auth, db, signIn };
+const signOut = async (): Promise<void> => {
+    try {
+        await firebaseSignOut(auth);
+    } catch (error) {
+        console.error("Error signing out: ", error);
+    }
+}
+
+export { app, auth, db, signIn, signOut };
