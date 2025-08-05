@@ -394,7 +394,16 @@ const PageCanvas: React.FC<PageCanvasProps> = ({
             if (pdfContext) {
                 const newRenderTask = page.render({ canvasContext: pdfContext, viewport });
                 renderTask.current = newRenderTask;
-                await newRenderTask.promise;
+                try {
+                    await newRenderTask.promise;
+                } catch (e: any) {
+                    if (e.name === 'RenderingCancelledException') {
+                        // This is expected if we rapidly change zoom or scroll.
+                        // We don't need to log an error.
+                    } else {
+                        console.error('Page render error:', e);
+                    }
+                }
             }
         };
 
