@@ -1,6 +1,10 @@
 import type { Timestamp } from "firebase/firestore";
 import type { HighlightArea } from "@react-pdf-viewer/highlight";
 
+// The DrawingPath type is not available as the @react-pdf-viewer/draw package does not exist.
+// This type is temporarily commented out to allow the application to build.
+// import type { DrawingPath } from "@react-pdf-viewer/draw";
+
 
 export interface Annotation {
   id: string;
@@ -16,7 +20,8 @@ export interface Annotation {
   };
 
   // Drawing-specific
-  paths?: any[]; // Was DrawingPath
+  // paths?: DrawingPath[];
+  paths?: any[];
   color?: string;
   opacity?: number;
   width?: number;

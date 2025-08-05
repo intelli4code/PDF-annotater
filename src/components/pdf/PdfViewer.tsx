@@ -14,6 +14,7 @@ import {
     ToolbarProps, 
     TransformToolbarSlot,
 } from '@react-pdf-viewer/default-layout';
+
 import {
     highlightPlugin,
     Trigger
@@ -23,7 +24,7 @@ import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@rea
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Highlighter, Edit, Eraser, Download, FileJson, Save, Bot, MessageSquare, Loader2, XCircle } from 'lucide-react';
+import { Highlighter, Edit, Eraser, Download, FileJson, Save, Bot, MessageSquare, Loader2, XCircle, Palette } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -35,7 +36,7 @@ import { Textarea } from '@/components/ui/textarea';
 import CommentsSidebar from './CommentsSidebar';
 
 
-type AnnotationMode = 'highlight' | 'erase';
+type AnnotationMode = 'highlight' | 'draw' | 'erase';
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -62,7 +63,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-
   const { toast } = useToast();
   
   const saveAnnotations = useCallback(async (newAnnotations: Annotation[]) => {
@@ -167,10 +167,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   };
 
   const highlightPluginInstance = highlightPlugin();
-  const {
-      getSelection,
-  } = highlightPluginInstance;
 
+  const { getSelection } = highlightPluginInstance;
 
   const layoutPluginInstance = defaultLayoutPlugin({
       renderToolbar: (
@@ -218,58 +216,51 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
 
   const renderHighlightsDecorator = (props: RenderHighlightsProps) => (
     <div>
-      <highlightPluginInstance.renderHighlights>
-        {(highlightProps) => (
-            <div>
-              {annotations
-                .filter(ann => ann.type === 'highlight' && ann.pageIndex === highlightProps.pageIndex && ann.highlightAreas)
-                .flatMap(ann => 
-                    ann.highlightAreas!.map((area, index) => (
-                        <Popover key={`${ann.id}-${index}`}>
-                            <PopoverTrigger asChild>
-                                <div
-                                    style={Object.assign(
-                                        {},
-                                        {
-                                            background: 'yellow',
-                                            opacity: 0.4,
-                                        },
-                                        highlightProps.getCssProperties(area, highlightProps.rotation)
-                                    )}
-                                    onClick={() => {
-                                        if (annotationMode === 'erase') {
-                                            removeAnnotation(ann.id);
-                                        }
-                                    }}
-                                />
-                            </PopoverTrigger>
-                            {annotationMode !== 'erase' && (
-                                <PopoverContent className="w-80">
-                                    <div className="grid gap-4">
-                                        <div className="space-y-2">
-                                            <h4 className="font-medium leading-none">Comment</h4>
-                                            <p className="text-sm text-muted-foreground">
-                                                Add a comment to this annotation.
-                                            </p>
-                                        </div>
-                                        <Textarea 
-                                            defaultValue={ann.comment}
-                                            onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
-                                            placeholder="Type your comment here."
-                                        />
-                                    </div>
-                                </PopoverContent>
-                            )}
-                        </Popover>
-                    ))
-                )}
-            </div>
+      {annotations
+        .filter(ann => ann.type === 'highlight' && ann.pageIndex === props.pageIndex && ann.highlightAreas)
+        .flatMap(ann =>
+          ann.highlightAreas!.map((area, index) => (
+            <Popover key={`${ann.id}-${index}`}>
+              <PopoverTrigger asChild>
+                <div
+                  style={Object.assign(
+                    {},
+                    {
+                      background: 'yellow',
+                      opacity: 0.4,
+                    },
+                    props.getCssProperties(area, props.rotation)
+                  )}
+                  onClick={() => {
+                    if (annotationMode === 'erase') {
+                      removeAnnotation(ann.id);
+                    }
+                  }}
+                />
+              </PopoverTrigger>
+              {annotationMode !== 'erase' && (
+                <PopoverContent className="w-80">
+                  <div className="grid gap-4">
+                    <div className="space-y-2">
+                      <h4 className="font-medium leading-none">Comment</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Add a comment to this annotation.
+                      </p>
+                    </div>
+                    <Textarea
+                      defaultValue={ann.comment}
+                      onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
+                      placeholder="Type your comment here."
+                    />
+                  </div>
+                </PopoverContent>
+              )}
+            </Popover>
+          ))
         )}
-      </highlightPluginInstance.renderHighlights>
     </div>
   );
-
-
+  
   const handleSummarizeSelection = useCallback(
     (selection: HighlightTarget) => {
       const { selectedText } = selection;
@@ -302,7 +293,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   
   
   const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
-  
+
   const AnnotationToolbar = () => (
     <div className="bg-gray-800 text-white px-4 py-2 flex items-center justify-between w-full">
         <div className="flex items-center gap-2">
@@ -321,13 +312,13 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                 
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button variant={'ghost'} disabled className="text-white hover:bg-gray-700" size="icon">
+                        <Button variant={annotationMode === 'draw' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" disabled>
                             <Edit className="h-5 w-5" />
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent>Drawing is temporarily disabled</TooltipContent>
                 </Tooltip>
-
+                
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <Button variant={annotationMode === 'erase' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationMode('erase')}>
@@ -386,24 +377,24 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
             <div className="flex-grow h-full w-full relative bg-gray-200">
                 <Worker workerUrl={workerUrl}>
                     <Viewer
-                    fileUrl={pdf.url}
-                    plugins={[layoutPluginInstance, highlightPluginInstance]}
-                    onHighlight={(areas, selection) => {
-                      if (annotationMode !== 'highlight') return;
-                      const newAnnotation: Annotation = {
-                        id: `${Date.now()}`,
-                        highlightAreas: areas,
-                        type: 'highlight',
-                        comment: '',
-                        pageIndex: areas[0].pageIndex,
-                        content: {
-                            text: selection.selectedText,
-                            image: '',
-                        },
-                      };
-                      addAnnotation(newAnnotation);
-                    }}
-                    renderHighlights={renderHighlightsDecorator}
+                        fileUrl={pdf.url}
+                        plugins={[layoutPluginInstance, highlightPluginInstance]}
+                        onHighlight={(areas, selection) => {
+                          if (annotationMode !== 'highlight') return;
+                          const newAnnotation: Annotation = {
+                            id: `${Date.now()}`,
+                            highlightAreas: areas,
+                            type: 'highlight',
+                            comment: '',
+                            pageIndex: areas[0].pageIndex,
+                            content: {
+                                text: selection.selectedText,
+                                image: '',
+                            },
+                          };
+                          addAnnotation(newAnnotation);
+                        }}
+                        renderHighlights={renderHighlightsDecorator}
                     />
                 </Worker>
             </div>
