@@ -13,13 +13,17 @@ import {
     defaultLayoutPlugin, 
     ToolbarProps, 
     TransformToolbarSlot,
-    HighlightArea,
-    HighlightTarget,
-    RenderHighlightsProps,
     DrawingMode,
     RenderDrawingProps,
-    Trigger
 } from '@react-pdf-viewer/default-layout';
+import {
+    highlightPlugin,
+    RenderHighlightsProps,
+    HighlightArea,
+    HighlightTarget,
+    Trigger
+} from '@react-pdf-viewer/highlight';
+
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -172,60 +176,111 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     });
   };
 
-  const layoutPluginInstance = defaultLayoutPlugin();
+  const highlightPluginInstance = highlightPlugin();
+  const {
+      getSelection,
+  } = highlightPluginInstance;
+
+
+  const layoutPluginInstance = defaultLayoutPlugin({
+      renderToolbar: (
+          Toolbar: (props: ToolbarProps) => React.ReactElement,
+      ) => (
+          <Toolbar>
+              {(slot: TransformToolbarSlot) => {
+                  const {
+                      CurrentPageInput,
+                      Download,
+                      EnterFullScreen,
+                      NumberOfPages,
+                      Print,
+                      Rotate,
+                      Zoom,
+                      ZoomIn,
+                      ZoomOut,
+                  } = slot;
+                  return (
+                      <>
+                          <div style={{ padding: '0px 2px' }}>
+                              <ZoomOut />
+                          </div>
+                          <div style={{ padding: '0px 2px' }}>
+                              <Zoom />
+                          </div>
+                          <div style={{ padding: '0px 2px' }}>
+                              <ZoomIn />
+                          </div>
+                          <div style={{ padding: '0px 2px', marginLeft: 'auto' }}>
+                              <Rotate />
+                          </div>
+                          <div style={{ padding: '0px 2px' }}>
+                              <EnterFullScreen />
+                          </div>
+                          <div style={{ padding: '0px 2px' }}>
+                              <Print />
+                          </div>
+                      </>
+                  );
+              }}
+          </Toolbar>
+      ),
+  });
+
   const {
       activateDrawingMode,
-      activateHighlighting,
-      getSelection,
-      renderHighlights,
       renderDrawing,
   } = layoutPluginInstance;
 
   const renderHighlightsDecorator = (props: RenderHighlightsProps) => (
     <div>
-      {renderHighlights(props)}
-      {annotations
-        .filter(ann => ann.type === 'highlight' && ann.pageIndex === props.pageIndex && ann.highlightAreas)
-        .flatMap(ann => 
-            ann.highlightAreas!.map((area, index) => (
-                <Popover key={`${ann.id}-${index}`}>
-                    <PopoverTrigger asChild>
-                        <div
-                            style={Object.assign(
-                                {},
-                                {
-                                    background: 'yellow',
-                                    opacity: 0.4,
-                                },
-                                props.getCssProperties(area, props.rotation)
-                            )}
-                            onClick={() => {
-                                if (annotationMode === 'erase') {
-                                    removeAnnotation(ann.id);
-                                }
-                            }}
-                        />
-                    </PopoverTrigger>
-                    {annotationMode !== 'erase' && (
-                        <PopoverContent className="w-80">
-                            <div className="grid gap-4">
-                                <div className="space-y-2">
-                                    <h4 className="font-medium leading-none">Comment</h4>
-                                    <p className="text-sm text-muted-foreground">
-                                        Add a comment to this annotation.
-                                    </p>
-                                </div>
-                                <Textarea 
-                                    defaultValue={ann.comment}
-                                    onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
-                                    placeholder="Type your comment here."
+      <highlightPluginInstance.renderHighlights>
+        {(highlightProps) => (
+            <div>
+              {annotations
+                .filter(ann => ann.type === 'highlight' && ann.pageIndex === highlightProps.pageIndex && ann.highlightAreas)
+                .flatMap(ann => 
+                    ann.highlightAreas!.map((area, index) => (
+                        <Popover key={`${ann.id}-${index}`}>
+                            <PopoverTrigger asChild>
+                                <div
+                                    style={Object.assign(
+                                        {},
+                                        {
+                                            background: 'yellow',
+                                            opacity: 0.4,
+                                        },
+                                        highlightProps.getCssProperties(area, highlightProps.rotation)
+                                    )}
+                                    onClick={() => {
+                                        if (annotationMode === 'erase') {
+                                            removeAnnotation(ann.id);
+                                        }
+                                    }}
                                 />
-                            </div>
-                        </PopoverContent>
-                    )}
-                </Popover>
-            ))
+                            </PopoverTrigger>
+                            {annotationMode !== 'erase' && (
+                                <PopoverContent className="w-80">
+                                    <div className="grid gap-4">
+                                        <div className="space-y-2">
+                                            <h4 className="font-medium leading-none">Comment</h4>
+                                            <p className="text-sm text-muted-foreground">
+                                                Add a comment to this annotation.
+                                            </p>
+                                        </div>
+                                        <Textarea 
+                                            defaultValue={ann.comment}
+                                            onBlur={(e) => updateAnnotationComment(ann.id, e.target.value)}
+                                            placeholder="Type your comment here."
+                                        />
+                                    </div>
+                                </PopoverContent>
+                            )}
+                        </Popover>
+                    ))
+                )}
+            </div>
         )}
+      </highlightPluginInstance.renderHighlights>
     </div>
   );
 
@@ -262,36 +317,23 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   
   useEffect(() => {
     if (annotationMode === 'highlight') {
-        activateHighlighting(Trigger.TextSelection);
+        highlightPluginInstance.activateHighlighting(Trigger.TextSelection);
         activateDrawingMode(DrawingMode.None);
     } else if (annotationMode === 'draw') {
-        activateHighlighting(Trigger.None);
+        highlightPluginInstance.activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.Freehand, {
             color: drawColor,
             opacity: drawOpacity,
             width: drawWidth,
         });
     } else if (annotationMode === 'erase') {
-        activateHighlighting(Trigger.None);
+        highlightPluginInstance.activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.Eraser);
     } else {
-        activateHighlighting(Trigger.None);
+        highlightPluginInstance.activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.None);
     }
-  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode, activateHighlighting]);
-
-  const transform: TransformToolbarSlot = (slot: ToolbarProps) => ({
-      ...slot,
-      Download: () => <></>,
-      SwitchTheme: () => <></>,
-      EnterFullScreen: () => <></>,
-      Print: () => <></>,
-      Open: () => <></>,
-      Rotate: () => <></>,
-      Zoom: () => <></>,
-      ZoomIn: () => <></>,
-      ZoomOut: () => <></>,
-  });
+  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode, highlightPluginInstance]);
   
   const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
   
@@ -391,7 +433,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                 <Worker workerUrl={workerUrl}>
                     <Viewer
                     fileUrl={pdf.url}
-                    plugins={[layoutPluginInstance]}
+                    plugins={[layoutPluginInstance, highlightPluginInstance]}
                     onHighlight={(areas) => {
                       if (annotationMode !== 'highlight') return;
                       const newAnnotation: Annotation = {
