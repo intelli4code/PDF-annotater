@@ -323,6 +323,7 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
         const renderPage = async () => {
             if (renderTask.current) {
                 renderTask.current.cancel();
+                renderTask.current = null;
             }
 
             const pdfCanvas = pdfCanvasRef.current;
@@ -385,7 +386,7 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
             className="relative mx-auto shadow-lg"
             style={{ width: pdfCanvasRef.current?.width, height: pdfCanvasRef.current?.height, cursor: getCursor() }}
             onMouseDown={(e) => onMouseDown(pageIndex, e)} onMouseMove={(e) => onMouseMove(pageIndex, e)}
-            onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onClick={(e) => handleEraserClick(pageIndex, e)}
+            onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onClick={(e) => onEraserClick(pageIndex, e)}
             data-page-index={pageIndex}
         >
             <canvas ref={pdfCanvasRef} />
