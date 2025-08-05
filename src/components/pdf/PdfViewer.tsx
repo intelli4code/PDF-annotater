@@ -14,15 +14,13 @@ import {
     ToolbarProps, 
     TransformToolbarSlot,
     DrawingMode,
-    RenderDrawingProps,
 } from '@react-pdf-viewer/default-layout';
+import type { RenderDrawingProps } from '@react-pdf-viewer/default-layout';
 import {
     highlightPlugin,
-    RenderHighlightsProps,
-    HighlightArea,
-    HighlightTarget,
     Trigger
 } from '@react-pdf-viewer/highlight';
+import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
 
 
 import { Button } from '@/components/ui/button';
@@ -179,6 +177,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   const highlightPluginInstance = highlightPlugin();
   const {
       getSelection,
+      activateHighlighting,
   } = highlightPluginInstance;
 
 
@@ -317,23 +316,23 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   
   useEffect(() => {
     if (annotationMode === 'highlight') {
-        highlightPluginInstance.activateHighlighting(Trigger.TextSelection);
+        activateHighlighting(Trigger.TextSelection);
         activateDrawingMode(DrawingMode.None);
     } else if (annotationMode === 'draw') {
-        highlightPluginInstance.activateHighlighting(Trigger.None);
+        activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.Freehand, {
             color: drawColor,
             opacity: drawOpacity,
             width: drawWidth,
         });
     } else if (annotationMode === 'erase') {
-        highlightPluginInstance.activateHighlighting(Trigger.None);
+        activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.Eraser);
     } else {
-        highlightPluginInstance.activateHighlighting(Trigger.None);
+        activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.None);
     }
-  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode, highlightPluginInstance]);
+  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode, activateHighlighting]);
   
   const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
   
