@@ -1,6 +1,6 @@
 import type { Timestamp } from "firebase/firestore";
 import type { HighlightArea } from "@react-pdf-viewer/highlight";
-import type { DrawingPath } from "@react-pdf-viewer/drawing";
+
 
 export interface Annotation {
   id: string;
@@ -16,7 +16,7 @@ export interface Annotation {
   };
 
   // Drawing-specific
-  paths?: DrawingPath[];
+  paths?: any[]; // Was DrawingPath
   color?: string;
   opacity?: number;
   width?: number;

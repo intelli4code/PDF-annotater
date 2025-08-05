@@ -13,18 +13,17 @@ import {
     defaultLayoutPlugin, 
     ToolbarProps, 
     TransformToolbarSlot,
-    DrawingMode,
 } from '@react-pdf-viewer/default-layout';
-import type { RenderDrawingProps } from '@react-pdf-viewer/default-layout';
 import {
-    highlightPlugin
+    highlightPlugin,
+    Trigger
 } from '@react-pdf-viewer/highlight';
 import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
 
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Highlighter, Edit, Eraser, Download, FileJson, Save, Bot, MessageSquare, Loader2, XCircle, ChevronDown } from 'lucide-react';
+import { Highlighter, Edit, Eraser, Download, FileJson, Save, Bot, MessageSquare, Loader2, XCircle } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -34,10 +33,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
 import CommentsSidebar from './CommentsSidebar';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 
-type AnnotationMode = 'highlight' | 'draw' | 'erase';
+type AnnotationMode = 'highlight' | 'erase';
 
 interface PdfViewerProps {
   pdf: PdfDocument;
@@ -64,11 +62,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-  // Drawing state
-  const [drawColor, setDrawColor] = useState('rgba(255, 0, 0, 0.5)');
-  const [drawOpacity, setDrawOpacity] = useState(0.5);
-  const [drawWidth, setDrawWidth] = useState(5);
-
 
   const { toast } = useToast();
   
@@ -223,11 +216,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
       ),
   });
 
-  const {
-      activateDrawingMode,
-      renderDrawing,
-  } = layoutPluginInstance;
-
   const renderHighlightsDecorator = (props: RenderHighlightsProps) => (
     <div>
       <highlightPluginInstance.renderHighlights>
@@ -312,21 +300,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     [toast]
   );
   
-  useEffect(() => {
-    if (annotationMode === 'highlight') {
-        activateDrawingMode(DrawingMode.None);
-    } else if (annotationMode === 'draw') {
-        activateDrawingMode(DrawingMode.Freehand, {
-            color: drawColor,
-            opacity: drawOpacity,
-            width: drawWidth,
-        });
-    } else if (annotationMode === 'erase') {
-        activateDrawingMode(DrawingMode.Eraser);
-    } else {
-        activateDrawingMode(DrawingMode.None);
-    }
-  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode]);
   
   const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
   
@@ -346,26 +319,14 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                     <TooltipContent>Highlight Text</TooltipContent>
                 </Tooltip>
                 
-                <DropdownMenu>
-                  <Tooltip>
+                <Tooltip>
                     <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                          <Button variant={annotationMode === 'draw' ? 'secondary' : 'ghost'} className="text-white hover:bg-gray-700" size="icon" onClick={() => setAnnotationMode('draw')}>
-                              <Edit className="h-5 w-5" />
-                          </Button>
-                      </DropdownMenuTrigger>
+                        <Button variant={'ghost'} disabled className="text-white hover:bg-gray-700" size="icon">
+                            <Edit className="h-5 w-5" />
+                        </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Draw</TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onSelect={() => setDrawColor('rgba(255, 0, 0, 0.5)')}>Red</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setDrawColor('rgba(0, 0, 255, 0.5)')}>Blue</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setDrawColor('rgba(0, 255, 0, 0.5)')}>Green</DropdownMenuItem>
-                     <DropdownMenuItem onSelect={() => setDrawWidth(5)}>Small Brush</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setDrawWidth(10)}>Medium Brush</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setDrawWidth(15)}>Large Brush</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    <TooltipContent>Drawing is temporarily disabled</TooltipContent>
+                </Tooltip>
 
                 <Tooltip>
                     <TooltipTrigger asChild>
@@ -427,7 +388,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                     <Viewer
                     fileUrl={pdf.url}
                     plugins={[layoutPluginInstance, highlightPluginInstance]}
-                    onHighlight={(areas) => {
+                    onHighlight={(areas, selection) => {
                       if (annotationMode !== 'highlight') return;
                       const newAnnotation: Annotation = {
                         id: `${Date.now()}`,
@@ -436,28 +397,13 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
                         comment: '',
                         pageIndex: areas[0].pageIndex,
                         content: {
-                            text: areas.map(a => a.content.text).join(' '),
+                            text: selection.selectedText,
                             image: '',
                         },
                       };
                       addAnnotation(newAnnotation);
                     }}
-                    onDrawingAdd={(props) => {
-                       const { pageIndex, drawing } = props;
-                        const newAnnotation: Annotation = {
-                          id: `${Date.now()}`,
-                          type: 'draw',
-                          pageIndex,
-                          paths: [drawing],
-                          comment: '',
-                          color: drawing.color,
-                          opacity: drawing.opacity,
-                          width: drawing.width,
-                        };
-                        addAnnotation(newAnnotation);
-                    }}
                     renderHighlights={renderHighlightsDecorator}
-                    renderDrawing={renderDrawing}
                     />
                 </Worker>
             </div>
@@ -473,5 +419,3 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
 };
 
 export default PdfViewer;
-
-    
