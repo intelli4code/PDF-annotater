@@ -8,7 +8,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
-  Square, Circle, Triangle, Check, X, MousePointer2, Brush, Eraser, Save, XCircle, Loader2, Undo, Redo, ZoomIn, ZoomOut, Type, Palette
+  Trash2, Square, Circle, Triangle, Check, X, MousePointer2, Brush, Eraser, Save, XCircle, Loader2, Undo, Redo, ZoomIn, ZoomOut, Type, Palette
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -31,7 +31,7 @@ const cleanAnnotationsForFirebase = (annotations: Annotation[]): any[] => {
         const cleanedAnn: any = { ...ann };
         Object.keys(cleanedAnn).forEach(key => {
             const K = key as keyof Annotation;
-            if (cleanedAnn[K] === undefined || K === 'isSelected') {
+            if (cleanedAnn[K] === undefined || cleanedAnn[K] === null || K === 'isSelected') {
                 delete cleanedAnn[K];
             }
         });
@@ -62,8 +62,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
 
 
   const setStateWithHistory = useCallback((newAnnotations: Annotation[] | ((prev: Annotation[]) => Annotation[])) => {
-    const updatedAnnotations = typeof newAnnotations === 'function' ? newAnnotations(annotations) : newAnnotations;
-    if (JSON.stringify(updatedAnnotations) === JSON.stringify(annotations)) return;
+    const currentAnns = history[historyIndex];
+    const updatedAnnotations = typeof newAnnotations === 'function' ? newAnnotations(currentAnns) : newAnnotations;
+    if (JSON.stringify(updatedAnnotations) === JSON.stringify(currentAnns)) return;
 
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(updatedAnnotations);
@@ -122,18 +123,23 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     toast({ title: "Annotations Saved" });
   }, [annotations, saveAnnotations, toast]);
   
-  const getCanvasAndCoords = (e: React.MouseEvent<HTMLElement>, pageIndex: number) => {
+  const getCanvasAndCoords = (e: React.MouseEvent<HTMLElement> | React.TouchEvent<HTMLElement>, pageIndex: number) => {
     const canvas = drawingCanvasRefs.current[pageIndex];
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / zoom;
-    const y = (e.clientY - rect.top) / zoom;
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    const x = (clientX - rect.left) / zoom;
+    const y = (clientY - rect.top) / zoom;
 
     return { canvas, x, y, pageIndex, rect };
   }
 
 
-  const handleMouseDown = (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseDown = (pageIndex: number, e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault();
     const eventData = getCanvasAndCoords(e, pageIndex);
     if (!eventData) return;
     const { x, y } = eventData;
@@ -171,22 +177,20 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
         const text = prompt("Enter text:");
         if (text) {
             const newAnnotation: Annotation = {
-                ...baseAnnotation, x, y, text, fontSize: 16, width: 0, height: 0,
+                ...baseAnnotation, x, y, text, fontSize: 16 / zoom, width: 0, height: 0,
             };
-            const newAnns = [...annotations, newAnnotation];
-            setStateWithHistory(newAnns);
+            setStateWithHistory(prev => [...prev, newAnnotation]);
         }
         setIsDrawing(false);
         return;
     }
 
     if (activeTool === 'check' || activeTool === 'cross') {
-        const size = 20;
+        const size = 20 / zoom;
         const newAnnotation: Annotation = {
             ...baseAnnotation, x: x - (size/2), y: y - (size/2), width: size, height: size,
         };
-        const newAnns = [...annotations, newAnnotation];
-        setStateWithHistory(newAnns);
+        setStateWithHistory(prev => [...prev, newAnnotation]);
         setIsDrawing(false);
         return;
     }
@@ -198,7 +202,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
     setStateWithHistory(prev => [...prev, newAnnotation]);
   };
   
-  const handleMouseMove = (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = (pageIndex: number, e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault();
       const eventData = getCanvasAndCoords(e, pageIndex);
       if (!eventData) return;
       const { x, y } = eventData;
@@ -255,7 +260,23 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   const isPointInAnnotation = (x: number, y: number, ann: Annotation): boolean => {
     const MARGIN = 5 / zoom;
     if (ann.type === 'marker' && ann.path) {
-        return ann.path.some(point => Math.sqrt(Math.pow(point.x - x, 2) + Math.pow(point.y - y, 2)) <= MARGIN);
+        const lineWidth = 5 / zoom;
+        return ann.path.some((point, i) => {
+            if (i === 0) return false;
+            const prevPoint = ann.path[i - 1];
+            // Simplified distance from point to line segment
+            const dist = Math.abs((point.y - prevPoint.y) * x - (point.x - prevPoint.x) * y + point.x * prevPoint.y - point.y * prevPoint.x) / Math.sqrt(Math.pow(point.y - prevPoint.y, 2) + Math.pow(point.x - prevPoint.x, 2));
+            
+            const len = Math.sqrt(Math.pow(point.x-x,2) + Math.pow(point.y-y,2));
+            if(len < lineWidth) return true
+
+            if(dist < lineWidth){
+                 const dot1 = (x - prevPoint.x) * (point.x - prevPoint.x) + (y - prevPoint.y) * (point.y - prevPoint.y);
+                 const dot2 = (x - point.x) * (prevPoint.x - point.x) + (y - point.y) * (prevPoint.y - point.y);
+                 if(dot1 >= 0 && dot2 >= 0) return true;
+            }
+            return false;
+        });
     } else {
         const x1 = Math.min(ann.x, ann.x + ann.width);
         const x2 = Math.max(ann.x, ann.x + ann.width);
@@ -267,7 +288,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   
   useEffect(() => {
     const updatedAnnotations = annotations.map(ann => ({...ann, isSelected: ann.id === selectedAnnotationId}));
-    setStateWithHistory(updatedAnnotations);
+    if (JSON.stringify(updatedAnnotations) !== JSON.stringify(annotations)) {
+        setStateWithHistory(updatedAnnotations);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAnnotationId]);
 
@@ -319,9 +342,9 @@ interface PageCanvasProps {
     pdfDoc: pdfjsLib.PDFDocumentProxy;
     pageIndex: number;
     annotations: Annotation[];
-    onMouseDown: (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => void;
-    onMouseMove: (pageIndex: number, e: React.MouseEvent<HTMLDivElement>) => void;
-    onMouseUp: (e: React.MouseEvent<HTMLDivElement>) => void;
+    onMouseDown: (pageIndex: number, e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => void;
+    onMouseMove: (pageIndex: number, e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => void;
+    onMouseUp: (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => void;
     activeTool: AnnotationTool;
     drawingCanvasRef: (el: HTMLCanvasElement | null) => void;
     zoom: number;
@@ -337,33 +360,27 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
 
     const drawAnnotation = useCallback((ctx: CanvasRenderingContext2D, annotation: Annotation) => {
       const isSelected = annotation.isSelected;
-      ctx.strokeStyle = isSelected ? '#00BFFF' : annotation.color;
-      ctx.fillStyle = annotation.color;
       
-      const { x, y, width: w, height: h, type } = annotation;
+      const { x, y, width: w, height: h, type, color, text, fontSize, path } = annotation;
+      
+      ctx.strokeStyle = isSelected ? '#00BFFF' : color;
+      ctx.fillStyle = color;
       
       const zx = x * zoom;
       const zy = y * zoom;
       const zw = w * zoom;
       const zh = h * zoom;
 
-      ctx.lineWidth = 2; 
-      if (isSelected) {
-          ctx.setLineDash([6, 3]);
-          ctx.lineWidth = 1;
-      } else {
-          ctx.setLineDash([]);
-          ctx.lineWidth = 2;
-      }
-
+      ctx.lineWidth = isSelected ? 1 : 2; 
+      ctx.setLineDash(isSelected ? [6, 3] : []);
+      
       switch (type) {
         case 'marker':
-          if (!annotation.path || annotation.path.length === 0) return;
+          if (!path || path.length === 0) return;
           ctx.globalAlpha = 0.5;
-          ctx.lineWidth = 5;
-          ctx.strokeStyle = annotation.color;
+          ctx.lineWidth = (isSelected ? 6 : 5) / zoom;
           ctx.beginPath();
-          annotation.path.forEach((point, index) => {
+          path.forEach((point, index) => {
               const zPointX = point.x * zoom;
               const zPointY = point.y * zoom;
               index === 0 ? ctx.moveTo(zPointX, zPointY) : ctx.lineTo(zPointX, zPointY);
@@ -388,23 +405,21 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
             if (isSelected) drawHandles(ctx, zx, zy, zw, zh);
             break;
         case 'check':
-            ctx.strokeStyle = annotation.color;
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(zx, zy + zh/2); ctx.lineTo(zx + zw/2, zy + zh); ctx.lineTo(zx + zw, zy);
             ctx.stroke();
             break;
         case 'cross':
-            ctx.strokeStyle = annotation.color;
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(zx,zy); ctx.lineTo(zx+zw, zy+zh); ctx.moveTo(zx+zw, zy); ctx.lineTo(zx, zy+zh);
             ctx.stroke();
             break;
         case 'text':
-            if (annotation.text && annotation.fontSize) {
-                ctx.font = `${annotation.fontSize}px Arial`;
-                ctx.fillText(annotation.text, zx, zy);
+            if (text && fontSize) {
+                ctx.font = `${fontSize * zoom}px Arial`;
+                ctx.fillText(text, zx, zy);
             }
             break;
       }
@@ -464,8 +479,11 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
                 }
             }
         };
-        renderPage();
+
+        const timeoutId = setTimeout(renderPage, 100); // Debounce rendering
+
         return () => {
+            clearTimeout(timeoutId);
             if (renderTask.current) {
                 renderTask.current.cancel();
                 renderTask.current = null;
@@ -504,6 +522,9 @@ const PageCanvas: React.FC<PageCanvasProps> = React.memo(({
             onMouseMove={(e) => onMouseMove(pageIndex, e)}
             onMouseUp={onMouseUp} 
             onMouseLeave={onMouseUp}
+            onTouchStart={(e) => onMouseDown(pageIndex, e)}
+            onTouchMove={(e) => onMouseMove(pageIndex, e)}
+            onTouchEnd={onMouseUp}
         >
             <canvas ref={pdfCanvasRef} style={{cursor: getCursor()}} />
             <canvas ref={localDrawingCanvasRef} className="absolute top-0 left-0" style={{cursor: getCursor()}} />
@@ -590,8 +611,8 @@ const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
           
           <Tooltip>
             <TooltipTrigger asChild>
-                <Button variant='ghost' size='icon' className="text-white hover:bg-gray-700" onClick={() => setActiveTool('eraser')} >
-                     <Eraser className={`h-5 w-5 ${activeTool === 'eraser' ? 'text-blue-400' : ''}`} />
+                <Button variant={activeTool === 'eraser' ? 'secondary' : 'ghost'} size='icon' className="text-white hover:bg-gray-700" onClick={() => setActiveTool('eraser')} >
+                     <Eraser className="h-5 w-5" />
                 </Button>
             </TooltipTrigger>
             <TooltipContent><p>Eraser</p></TooltipContent>
@@ -602,7 +623,7 @@ const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({
           { isAnnotationSelected && 
              <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button variant='ghost' size='icon' className="text-red-500 hover:bg-gray-700" onClick={onDelete}>
+                    <Button variant='ghost' size='icon' className="text-red-500 hover:bg-red-700" onClick={onDelete}>
                         <Trash2 className="h-5 w-5" />
                     </Button>
                 </TooltipTrigger>
