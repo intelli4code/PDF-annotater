@@ -17,8 +17,7 @@ import {
 } from '@react-pdf-viewer/default-layout';
 import type { RenderDrawingProps } from '@react-pdf-viewer/default-layout';
 import {
-    highlightPlugin,
-    Trigger
+    highlightPlugin
 } from '@react-pdf-viewer/highlight';
 import type { RenderHighlightsProps, HighlightArea, HighlightTarget } from '@react-pdf-viewer/highlight';
 
@@ -177,7 +176,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   const highlightPluginInstance = highlightPlugin();
   const {
       getSelection,
-      activateHighlighting,
   } = highlightPluginInstance;
 
 
@@ -316,23 +314,19 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
   
   useEffect(() => {
     if (annotationMode === 'highlight') {
-        activateHighlighting(Trigger.TextSelection);
         activateDrawingMode(DrawingMode.None);
     } else if (annotationMode === 'draw') {
-        activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.Freehand, {
             color: drawColor,
             opacity: drawOpacity,
             width: drawWidth,
         });
     } else if (annotationMode === 'erase') {
-        activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.Eraser);
     } else {
-        activateHighlighting(Trigger.None);
         activateDrawingMode(DrawingMode.None);
     }
-  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode, activateHighlighting]);
+  }, [annotationMode, drawColor, drawOpacity, drawWidth, activateDrawingMode]);
   
   const workerUrl = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
   
@@ -479,3 +473,5 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdf, onClose, userId, appId, onPd
 };
 
 export default PdfViewer;
+
+    
